@@ -1,0 +1,8 @@
+{
+    "video_path": "D:/Github/InsightLabeler/videos/gzx_1.mp4",
+    "model_path": "D:/Github/InsightLabeler/model/train_2/weights/best.pt",
+    "output_dir": "D:/Github/InsightLabeler/output",
+    "conf_threshold": 0.5,
+    "img_size": 640,
+    "frame_interval": 5
+}
