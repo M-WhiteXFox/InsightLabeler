@@ -9,22 +9,7 @@ import logging
 import sys
 import gc
 
-
-class TextHandler(logging.Handler):
-    """自定义日志处理器，将日志消息重定向到Tkinter Text控件。"""
-
-    def __init__(self, text_widget):
-        super().__init__()
-        self.text_widget = text_widget
-        self.text_widget.configure(state='disabled')
-
-    def emit(self, record):
-        msg = self.format(record)
-        self.text_widget.configure(state='normal')
-        self.text_widget.insert(tk.END, msg + '\n')
-        self.text_widget.see(tk.END)
-        self.text_widget.configure(state='disabled')
-
+from logger import TextHandler
 
 class YoloAnnotator:
     def __init__(self, root):
@@ -88,7 +73,7 @@ class YoloAnnotator:
                                 logging.FileHandler('app.log', encoding='utf-8')
                             ])
         self.logger = logging.getLogger('YoloAnnotator')
-
+#界面的外观以及调用方法
     def setup_gui(self):
         # Main container
         main = ttk.Frame(self.root, padding=10)
@@ -387,102 +372,132 @@ class YoloAnnotator:
         self.save_config()
         self.root.destroy()
 
+    # detectorYOLO推理模块,390~449
     def load_assets(self):
         try:
+            # 更新状态栏，提示用户正在加载
             self.status_label.config(text="正在加载模型...")
             self.logger.info("开始加载模型...")
             self.root.update_idletasks()
+            # 加载 YOLO 模型
             self.model = YOLO(self.model_path.get())
             self.class_names = list(self.model.names.values())
-
+            # 打开视频文件
             self.cap = cv2.VideoCapture(self.video_path.get())
             if not self.cap.isOpened():
                 raise Exception("无法打开视频文件")
+            # 获取视频总帧数
             self.total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
-
+            # 创建输出目录（如果不存在）
             os.makedirs(self.output_dir.get(), exist_ok=True)
+            # 激活界面上的按钮（之前是禁用状态）
             self._set_ui_state("normal")
-
+            # 更新状态栏，提示用户可以开始处理
             self.status_label.config(text="加载成功，请点击'保存并下一张'开始处理。")
             self.logger.info("模型和视频加载成功，准备处理。")
+            # 自动跳到第一帧进行显示（但不保存标注）
             self.navigate_frames(1, save=False)
         except Exception as e:
+            # 出错时弹窗+日志
             self.logger.error(f"加载失败: {e}")
             messagebox.showerror("加载失败", f"加载失败: {e}")
-
+#同为画布模块 ：提升画布功能兼容性，增加无图像时的捕获应对
     def re_predict_frame(self):
         if self.current_frame_img is None:
+            # 没有加载帧，不能重新预测
             self.logger.warning("无法重新预测，没有加载当前帧。")
             messagebox.showwarning("无图像", "没有加载当前帧")
             return
+        # 保存当前的参数配置
         self.save_config()
+        # 日志记录
         self.logger.info(f"正在重新预测第 {self.current_frame_num} 帧。")
-        self.process_and_display_frame(self.current_frame_img, self.current_frame_num, predict=True)
-
+        # 使用 YOLO 重新对当前帧进行预测
+        self.process_and_display_frame(self.current_frame_img,
+                                       self.current_frame_num,
+                                       predict=True)
+#画布功能
     def process_and_display_frame(self, frame, frame_num, predict=True):
+        # 保存当前帧图像
         self.current_frame_img = frame.copy()
+        # 在左侧“原图区域”显示帧
         self.display_image(frame, self.orig_canvas, is_detect=False)
-
+        # 重置缩放、平移状态
         self.zoom_level = 1.0
         self.canvas_x_offset = 0
         self.canvas_y_offset = 0
         self.detect_canvas.config(cursor="crosshair")
-
         if predict:
+            # 如果需要预测，则调用 YOLO 模型
             self.logger.info(f"正在使用模型预测第 {frame_num} 帧。")
             res = self.model.predict(frame,
                                      imgsz=self.img_size.get(),
                                      conf=self.conf_threshold.get(),
                                      verbose=False)
+
+            # 提取检测框数据（x1, y1, x2, y2, conf, cls）
             boxes = res[0].boxes.data.cpu().numpy() if res[0].boxes is not None else []
             self.detections = []
             for i, b in enumerate(boxes):
                 x1, y1, x2, y2, conf, cls = b
                 self.detections.append({
-                    "id": i, "label": self.model.names[int(cls)],
-                    "coords": [x1, y1, x2, y2], "conf": conf
+                    "id": i,
+                    "label": self.model.names[int(cls)],  # 类别名称
+                    "coords": [x1, y1, x2, y2],  # 框的坐标
+                    "conf": conf  # 置信度
                 })
             self.logger.info(f"第 {frame_num} 帧预测完成，发现 {len(self.detections)} 个目标。")
-
+        # 在右侧检测画布上绘制帧和标注框
         self.redraw_canvas()
+        # 更新标注框列表（左下角的列表框）
         self.update_detection_list()
+        # 更新状态栏（显示帧号/检测数）
         self.update_status()
-
+    #456~507 :调取下一张图像并对画布进行操作
     def redraw_canvas(self):
+        # 清空画布上的所有内容
         self.detect_canvas.delete("all")
         if self.current_frame_img is None:
-            return
-
+            return  # 如果当前帧还没加载，就不画
+        # 获取当前帧图像的原始尺寸
         h, w, _ = self.current_frame_img.shape
+        # 获取画布的宽高
         canvas_w, canvas_h = self.detect_canvas.winfo_width(), self.detect_canvas.winfo_height()
+        # 防止窗口未刷新时宽高为0，给个默认值
         if canvas_w < 10 or canvas_h < 10:
             canvas_w, canvas_h = 800, 600
-
+        # 计算基础缩放比例（保证整幅图能显示在画布里）
         base_scale = min(canvas_w / w, canvas_h / h)
         img_w, img_h = int(w * base_scale), int(h * base_scale)
-
+        # 在基础缩放上再加上用户缩放（zoom_level）
         zoom_w, zoom_h = int(img_w * self.zoom_level), int(img_h * self.zoom_level)
+        # 缩放图像
         resized = cv2.resize(self.current_frame_img, (zoom_w, zoom_h))
+        # 转换 BGR → RGB，因为 Tkinter 要用 RGB
         rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
         imgtk = ImageTk.PhotoImage(Image.fromarray(rgb))
+        # 保存引用，防止被垃圾回收
         self.detect_imgtk = imgtk
-
+        # 计算初始居中偏移量（没缩放前保证居中）
         initial_x_offset = (canvas_w - w * base_scale) / 2
         initial_y_offset = (canvas_h - h * base_scale) / 2
-
+        # 加上用户平移偏移量
         final_x = self.canvas_x_offset + initial_x_offset
         final_y = self.canvas_y_offset + initial_y_offset
-
+        # 把缩放后的图像画到画布上
         self.detect_canvas.create_image(final_x, final_y, anchor="nw", image=imgtk)
-
+        # 遍历每一个检测框，画矩形和文字
         for det in self.detections:
-            x1, y1, x2, y2 = det["coords"]
-            cx1, cy1 = self.to_canvas(x1, y1)
+            x1, y1, x2, y2 = det["coords"]  # 框的坐标（图像坐标系）
+            cx1, cy1 = self.to_canvas(x1, y1)  # 转成画布坐标
             cx2, cy2 = self.to_canvas(x2, y2)
+            # 如果当前框是被选中的，用青色，否则用红色
             color = "cyan" if det["id"] == self.selected_detection_id else "red"
+            # 在画布上画矩形框
             self.detect_canvas.create_rectangle(
                 cx1, cy1, cx2, cy2,
                 outline=color, width=2, tags=("detection", f"det_{det['id']}"))
+            # 在矩形上方写上标签和置信度
             self.detect_canvas.create_text(
                 cx1, cy1 - 10,
                 text=f"{det['label']} ({det['conf']:.2f})",
@@ -490,187 +505,249 @@ class YoloAnnotator:
                 tags=("detection",))
 
     def display_image(self, img, canvas, is_detect=False):
+        # 清空画布上的内容
         canvas.delete("all")
+        # 获取原始图像的宽高
         h, w, _ = img.shape
+        # 获取画布当前宽高
         cw, ch = canvas.winfo_width(), canvas.winfo_height()
+        # 如果画布还没初始化出来，默认设置为 800x600
         if cw < 10 or ch < 10:
             cw, ch = 800, 600
 
+        # 计算图像相对画布的缩放比例（保证不超过画布范围）
         scale_x = cw / w
         scale_y = ch / h
-        scale = min(scale_x, scale_y)
-        new_w, new_h = int(w * scale), int(h * scale)
-        resized = cv2.resize(img, (new_w, new_h))
-        rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
-        imgtk = ImageTk.PhotoImage(Image.fromarray(rgb))
+        scale = min(scale_x, scale_y)  # 取较小的比例，防止拉伸变形
 
+        # 计算缩放后的新宽高
+        new_w, new_h = int(w * scale), int(h * scale)
+
+        # 用 OpenCV 缩放图像
+        resized = cv2.resize(img, (new_w, new_h))
+
+        # OpenCV 默认是 BGR，需要转为 RGB 才能给 Tkinter 用
+        rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+
+        # 把 numpy 数组转换为 Tkinter 能识别的图像对象
+        imgtk = ImageTk.PhotoImage(Image.fromarray(rgb))
+        # 区分是“检测结果图像”还是“原图区域”，分别保存引用
         if is_detect:
             self.detect_imgtk = imgtk
         else:
             self.orig_imgtk = imgtk
-
+        # 计算居中显示时的偏移量
         x_offset = (cw - new_w) / 2
         y_offset = (ch - new_h) / 2
-
+        # 把图像画到画布上
         canvas.create_image(x_offset, y_offset, anchor="nw", image=imgtk)
+        # 设置画布的滚动范围，确保图像能被完整拖动/显示
         canvas.config(scrollregion=canvas.bbox(tk.ALL))
 
     def to_canvas(self, x, y):
+        # 获取当前帧的原始图像大小（宽 w，高 h）
         h, w, _ = self.current_frame_img.shape
+        # 获取画布的宽高
         canvas_w, canvas_h = self.detect_canvas.winfo_width(), self.detect_canvas.winfo_height()
+        # 如果画布还没准备好，给一个默认值
         if canvas_w < 10 or canvas_h < 10:
             canvas_w, canvas_h = 800, 600
-
+        # 计算图像缩放比例（保持比例缩放，适应画布大小）
         base_scale = min(canvas_w / w, canvas_h / h)
+        # 计算图像在画布中居中时的初始偏移量
         initial_x_offset = (canvas_w - w * base_scale) / 2
         initial_y_offset = (canvas_h - h * base_scale) / 2
-
-        return x * base_scale * self.zoom_level + self.canvas_x_offset + initial_x_offset, \
-               y * base_scale * self.zoom_level + self.canvas_y_offset + initial_y_offset
-
+        # 返回转换后的画布坐标：
+        # 原图坐标 × 缩放比例 × 用户缩放倍数 + 用户平移偏移 + 初始居中偏移
+        return (
+            x * base_scale * self.zoom_level + self.canvas_x_offset + initial_x_offset,
+            y * base_scale * self.zoom_level + self.canvas_y_offset + initial_y_offset
+        )
+#用来把鼠标点击的画布坐标还原回原图坐标，保证框选/拖动标注时不会错位
     def to_image(self, cx, cy):
+        # 获取当前帧的原始图像大小（宽 w，高 h）
         h, w, _ = self.current_frame_img.shape
+        # 获取画布的宽高
         canvas_w, canvas_h = self.detect_canvas.winfo_width(), self.detect_canvas.winfo_height()
+        # 如果画布还没初始化，给个默认大小
         if canvas_w < 10 or canvas_h < 10:
             canvas_w, canvas_h = 800, 600
-
+        # 计算基础缩放比例（图像适配画布时的缩放）
         base_scale = min(canvas_w / w, canvas_h / h)
+        # 计算图像在画布中居中显示时的初始偏移量
         initial_x_offset = (canvas_w - w * base_scale) / 2
         initial_y_offset = (canvas_h - h * base_scale) / 2
-
-        return (cx - self.canvas_x_offset - initial_x_offset) / (base_scale * self.zoom_level), \
-               (cy - self.canvas_y_offset - initial_y_offset) / (base_scale * self.zoom_level)
+        # 计算原始图像坐标：
+        # (画布坐标 - 用户平移偏移 - 初始居中偏移) / (缩放比例 × 用户缩放倍数)
+        return (
+            (cx - self.canvas_x_offset - initial_x_offset) / (base_scale * self.zoom_level),
+            (cy - self.canvas_y_offset - initial_y_offset) / (base_scale * self.zoom_level)
+        )
 
     def _set_ui_state(self, state):
+        # 遍历一组关键按钮（重新预测、添加框、删除、清空、导航、批量处理、跳转）
         for btn in [self.repredict_btn, self.add_box_btn, self.delete_btn,
                     self.clear_btn, self.prev_btn, self.save_next_btn,
                     self.skip_next_btn, self.batch_convert_btn, self.jump_btn]:
+            # 设置按钮的状态：可以是 "normal"（可点击） 或 "disabled"（禁用）
             btn.config(state=state)
+        # 根据状态调整画布光标：
+        # 如果禁用 → 空字符串（不可交互）
+        # 如果启用 → 十字光标，提示用户可以在画布上画框/选择
         self.detect_canvas.config(cursor="" if state == "disabled" else "crosshair")
-
+##一键批量转换按钮的核心逻辑
     def batch_process(self):
+        # 如果视频没有加载（self.cap 为空）或者已经在批量处理中，就直接返回
         if not self.cap or self.is_processing_batch:
             return
-
-        if not messagebox.askyesno("批量转换确认",
-                                   f"将从当前帧 ({self.current_frame_num}) 开始，按每 {self.frame_interval.get()} 帧间隔，自动处理并保存到视频末尾。是否继续？"):
+        # 弹出确认对话框，防止用户误操作
+        if not messagebox.askyesno(
+                "批量转换确认",
+                f"将从当前帧 ({self.current_frame_num}) 开始，按每 {self.frame_interval.get()} 帧间隔，自动处理并保存到视频末尾。是否继续？"
+        ):
             self.logger.info("用户取消了批量转换。")
             return
-
+        # 标记正在批量处理，避免重复启动
         self.is_processing_batch = True
+        # 禁用所有按钮，防止用户操作干扰
         self._set_ui_state("disabled")
+        # 保存配置参数（帧间隔、置信度等）
         self.save_config()
         self.logger.info("开始批量转换...")
-
+        # 获取视频总帧数
         total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        # 修复点: 使用一个局部变量来跟踪批量处理的当前帧数
+        # 当前处理的帧号（从当前帧开始）
         current_frame = self.current_frame_num
-
+        # 循环遍历帧，直到视频结束 或 用户中断
         while current_frame < total_frames and self.is_processing_batch:
+            # 更新状态栏
             self.status_label.config(text=f"正在处理第 {current_frame} / {total_frames} 帧...")
             self.root.update_idletasks()
-
+            # 跳到指定帧，读取图像
             self.cap.set(cv2.CAP_PROP_POS_FRAMES, current_frame)
             ret, frame = self.cap.read()
 
             if not ret:
+                # 读帧失败，终止
                 self.logger.warning(f"无法读取第 {current_frame} 帧，批量转换停止。")
                 break
 
+            # 检查是否已有该帧的标注文件
             json_path = os.path.join(self.output_dir.get(), f"frame_{current_frame}.json")
             if os.path.exists(json_path):
+                # 已存在 → 直接加载标注，不再重复预测
                 self.load_annotations(json_path)
                 predict = False
                 self.logger.info(f"第 {current_frame} 帧的标注已存在，跳过预测。")
             else:
+                # 不存在 → 用 YOLO 预测
                 predict = True
 
-            # 修复点: 传入正确的帧号到 save_annotations 和 process_and_display_frame
+            # 对该帧进行预测并显示，同时保存标注结果
             self.process_and_display_frame(frame, current_frame, predict=predict)
             self.save_annotations(current_frame)
             self.logger.info(f"第 {current_frame} 帧处理完成并已保存。")
 
-            # 修复点: 强制垃圾回收，防止内存累积
+            # 手动释放内存，避免批量处理时内存泄漏
             del frame
             gc.collect()
 
+            # 跳到下一帧（间隔由 frame_interval 控制，比如每 5 帧取 1 帧）
             current_frame += self.frame_interval.get()
 
+        # 批量处理结束
         self.is_processing_batch = False
+        # 恢复按钮可用
         self._set_ui_state("normal")
+        # 更新状态栏
         self.status_label.config(text="批量转换完成！")
         self.logger.info("批量转换完成。")
-
+#帧数跳转功能
     def jump_to_frame(self):
+        # 如果视频还没加载，直接提示并返回
         if self.cap is None:
             messagebox.showwarning("未加载", "请先加载视频和模型")
             return
-
         try:
+            # 从输入框里取用户输入的帧号（字符串转整数）
             target_num = int(self.target_frame_num.get())
+
+            # 检查帧号是否在范围内
             if not 0 <= target_num < self.total_frames:
-                messagebox.showerror("无效帧数", f"请输入一个有效的帧数，范围在 0 到 {self.total_frames - 1} 之间。")
+                messagebox.showerror("无效帧数",
+                                     f"请输入一个有效的帧数，范围在 0 到 {self.total_frames - 1} 之间。")
                 self.logger.error(f"用户输入的帧数 {target_num} 超出范围。")
                 return
 
             self.logger.info(f"正在跳转到指定帧数: {target_num}")
 
-            # Save current annotations
+            # 在跳转之前，先保存当前帧的标注（避免数据丢失）
             self.save_annotations(self.current_frame_num)
-
-            # Set the new frame number
+            # 更新当前帧号，并加入历史记录
             self.current_frame_num = target_num
             self.history.append(target_num)
-
-            # Read the frame
+            # 定位到目标帧并读取图像
             self.cap.set(cv2.CAP_PROP_POS_FRAMES, self.current_frame_num)
             ret, frame = self.cap.read()
             if not ret:
                 messagebox.showerror("读取失败", f"无法跳转并读取帧号为 {self.current_frame_num} 的帧。")
                 self.logger.error(f"无法读取帧号为 {self.current_frame_num} 的帧。")
                 return
-
+            # 检查该帧是否已有保存好的 JSON 标注
             json_path = os.path.join(self.output_dir.get(), f"frame_{self.current_frame_num}.json")
             if os.path.exists(json_path):
+                # 如果有，直接加载，不再预测
                 self.load_annotations(json_path)
                 predict = False
             else:
+                # 没有，就重新用模型预测
                 predict = True
-
+            # 显示这一帧图像 + 标注结果
             self.process_and_display_frame(frame, self.current_frame_num, predict=predict)
+            # 如果历史记录大于 1，说明可以返回上一帧 → 启用“上一帧”按钮
             self.prev_btn.config(state="normal" if len(self.history) > 1 else "disabled")
-
         except ValueError:
+            # 用户输入的不是整数（比如输入了字母），报错提示
             messagebox.showerror("无效输入", "请输入一个有效的整数帧数。")
             self.logger.error("用户输入了无效的帧数，不是整数。")
 
+#抽帧预览方法
     def navigate_frames(self, direction, save=True):
+        # 如果视频还没加载，或者正在批量处理 → 禁止导航
         if self.cap is None or self.is_processing_batch:
             self.logger.warning("无法导航，视频未加载或正在进行批量处理。")
             messagebox.showwarning("未加载", "请先加载视频和模型")
             return
 
+        # 如果需要保存，先把当前帧的标注写入 JSON 文件
         if save:
             self.save_annotations(self.current_frame_num)
 
-        if direction == 1:
+        # --- 计算目标帧号 ---
+        if direction == 1:  # 向前（下一帧）
+            # 获取历史记录中的最后一帧号；如果还没有历史记录，就从 -间隔 开始
             last_frame = self.history[-1] if self.history else -self.frame_interval.get()
+            # 下一帧号 = 最后一帧 + 抽帧间隔
             target_frame_num = last_frame + self.frame_interval.get()
             self.logger.info(f"导航到下一帧，目标帧号: {target_frame_num}")
-        else:
+        else:  # 向后（上一帧）
             if len(self.history) <= 1:
+                # 历史记录只有一帧，说明已经是第一帧，不能再回退
                 self.logger.warning("已是第一帧，无法回退。")
                 return
+            # 移除最后一帧（相当于撤销一次前进）
             self.history.pop()
             target_frame_num = self.history[-1]
             self.logger.info(f"回退到上一帧，目标帧号: {target_frame_num}")
 
+        # --- 检查帧号是否超出范围 ---
         total = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
         if target_frame_num >= total:
             self.status_label.config(text="视频处理结束！")
             self.logger.info("已到达视频末尾。")
             return
 
+        # --- 跳转并读取目标帧 ---
         self.cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame_num)
         ret, frame = self.cap.read()
         if not ret:
@@ -678,19 +755,26 @@ class YoloAnnotator:
             self.logger.error(f"无法读取帧号为 {target_frame_num} 的帧。")
             return
 
+        # 更新当前帧号
         self.current_frame_num = target_frame_num
-        if direction == 1:
+        if direction == 1:  # 只有前进时才加入历史
             self.history.append(target_frame_num)
 
+        # --- 检查标注文件 ---
         json_path = os.path.join(self.output_dir.get(), f"frame_{target_frame_num}.json")
         if os.path.exists(json_path):
+            # 如果已有标注文件，直接加载，不做预测
             self.load_annotations(json_path)
             predict = False
             self.logger.info(f"第 {target_frame_num} 帧的标注已存在，从文件加载。")
         else:
+            # 没有标注文件 → 用 YOLO 模型预测
             predict = True
 
+        # 显示帧图像 + 标注结果
         self.process_and_display_frame(frame, target_frame_num, predict=predict)
+
+        # 如果历史记录超过 1，说明可以回退 → 启用“上一帧”按钮
         self.prev_btn.config(state="normal" if len(self.history) > 1 else "disabled")
 
     def save_annotations(self, frame_num):
@@ -941,7 +1025,3 @@ class YoloAnnotator:
         )
 
 
-if __name__ == '__main__':
-    root = tk.Tk()
-    app = YoloAnnotator(root)
-    root.mainloop()
