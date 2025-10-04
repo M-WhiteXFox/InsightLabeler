@@ -3,5 +3,6 @@
     "output_dir": "D:\\Github\\InsightLabeler\\output",
     "frame_interval": 5,
     "max_frames": 100,
-    "quality": 95
+    "quality": 95,
+    "last_dir": "./"
 }

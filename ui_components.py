@@ -1,12 +1,21 @@
+"""
+UI组件模块
+负责创建和管理用户界面组件
+"""
+
 import sys
+from typing import Tuple, Any
 from functools import partial
 
-from PyQt5.QtWidgets import QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QGroupBox, QFrame, QSpinBox, QLineEdit, QStackedWidget, QSizePolicy
+from PyQt5.QtWidgets import QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QGroupBox, QFrame, QSpinBox, QLineEdit, QStackedWidget, QSizePolicy, QWidget
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
 
+import styles
 
-def create_button(text, color="#6c757d", size="medium", parent=None, checkable=False):
+
+def create_button(text: str, color: str = styles.COLORS["primary"], size: str = "medium", 
+                  parent: Any = None, checkable: bool = False) -> QPushButton:
     """
     创建统一样式的按钮
     
@@ -19,88 +28,22 @@ def create_button(text, color="#6c757d", size="medium", parent=None, checkable=F
     """
     button = QPushButton(text, parent)
     button.setCheckable(checkable)
-    # 去除按钮焦点边框
-    button.setFocusPolicy(Qt.NoFocus)
     
-    # 根据大小设置不同的样式
-    if size == "small":
-        padding = "8px 16px"
-        font_size = "16px"  # 其他按钮使用16px
-        min_width = "80px"
-    elif size == "large":
-        padding = "14px 28px"
-        font_size = "16px"  # 其他按钮使用16px
-        min_width = "140px"
-    else:  # medium
-        padding = "12px 24px"
-        font_size = "16px"  # 其他按钮使用16px
-        min_width = "100px"
-    
-    button.setStyleSheet(f"""
-        QPushButton {{
-            background-color: {color};
-            border: none;
-            color: white;
-            padding: {padding};
-            text-align: center;
-            text-decoration: none;
-            font-size: {font_size};
-            font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
-            font-weight: normal;
-            margin: 4px 2px;
-            border-radius: 8px;
-            min-width: {min_width};
-        }}
-        QPushButton:hover {{
-            background-color: #5a6268;
-        }}
-        QPushButton:pressed {{
-            background-color: #545b62;
-        }}
-    """)
+    # 设置按钮样式
+    button.setStyleSheet(styles.get_button_style(size, color))
     
     # 设置按钮的尺寸策略，使其可以缩放
     button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
     return button
 
 
-def create_top_button(text, color, parent=None, checkable=False):
+def create_top_button(text: str, color: str = styles.COLORS["primary"], 
+                      parent: Any = None, checkable: bool = False) -> QPushButton:
     """创建顶部按钮"""
-    # 顶部按钮使用中等灰色，大尺寸，字体较大
-    button = QPushButton(text, parent)
-    button.setCheckable(checkable)
-    # 去除按钮焦点边框
-    button.setFocusPolicy(Qt.NoFocus)
-    
-    button.setStyleSheet(f"""
-        QPushButton {{
-            background-color: {color};
-            border: none;
-            color: white;
-            padding: 14px 28px;
-            text-align: center;
-            text-decoration: none;
-            font-size: 20px;  /* 顶部按钮使用20px */
-            font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
-            font-weight: normal;
-            margin: 4px 2px;
-            border-radius: 8px;
-            min-width: 140px;
-        }}
-        QPushButton:hover {{
-            background-color: #5a6268;
-        }}
-        QPushButton:pressed {{
-            background-color: #545b62;
-        }}
-    """)
-    
-    # 设置按钮的尺寸策略，使其可以缩放
-    button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-    return button
+    return create_button(text, color, "large", parent, checkable)
 
 
-def create_image_display_area(parent_layout, image_label):
+def create_image_display_area(parent_layout: QHBoxLayout, image_label: QLabel) -> None:
     """创建图片显示区域"""
     image_container = QFrame()
     image_container.setStyleSheet("""
@@ -118,7 +61,7 @@ def create_image_display_area(parent_layout, image_label):
     title_label = QLabel("图片预览")
     title_label.setStyleSheet("""
         QLabel {
-            font-size: 16px;  /* 其他组件使用16px */
+            font-size: 18px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
             font-weight: bold;
             color: #2c3e50;
@@ -144,7 +87,7 @@ def create_image_display_area(parent_layout, image_label):
             border-radius: 6px;
             padding: 25px;
             color: #6c757d;
-            font-size: 16px;  /* 其他组件使用16px */
+            font-size: 16px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
         }
     """)
@@ -153,7 +96,7 @@ def create_image_display_area(parent_layout, image_label):
     parent_layout.addWidget(image_container, stretch=3)
 
 
-def create_function_panel_area(parent_layout):
+def create_function_panel_area(parent_layout: QHBoxLayout) -> QStackedWidget:
     """创建功能面板区域"""
     function_panel = QStackedWidget()
     function_panel.setStyleSheet("""
@@ -171,10 +114,9 @@ def create_function_panel_area(parent_layout):
     return function_panel
 
 
-def create_video_panel(config, select_file_handler, extract_frames_handler):
+def create_video_panel(config: dict, select_file_handler: callable, 
+                       extract_frames_handler: callable) -> Tuple:
     """创建视频处理面板"""
-    from PyQt5.QtWidgets import QWidget
-    
     panel = QWidget()
     layout = QVBoxLayout(panel)
     layout.setSpacing(15)
@@ -184,7 +126,7 @@ def create_video_panel(config, select_file_handler, extract_frames_handler):
     video_group.setStyleSheet("""
         QGroupBox {
             font-weight: bold;
-            font-size: 16px;  /* 其他组件使用16px */
+            font-size: 18px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
             color: #2c3e50;
             padding-top: 25px;
@@ -207,7 +149,7 @@ def create_video_panel(config, select_file_handler, extract_frames_handler):
     video_label.setStyleSheet("""
         QLabel { 
             font-weight: normal; 
-            font-size: 16px;  /* 其他组件使用16px */
+            font-size: 16px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
         }
     """)
@@ -217,13 +159,13 @@ def create_video_panel(config, select_file_handler, extract_frames_handler):
         video_line_edit.setPlaceholderText("请选择视频文件")
     video_line_edit.setStyleSheet("""
         QLineEdit { 
-            font-size: 16px;  /* 其他组件使用16px */
+            font-size: 16px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
             padding: 8px;
         }
     """)
     
-    browse_btn = create_button("浏览", "#6c757d", "small")
+    browse_btn = create_button("浏览", styles.COLORS["primary"], "small")
     browse_btn.clicked.connect(partial(select_file_handler, video_line_edit, "video_path"))
     
     folder_choose.addWidget(video_label)
@@ -237,7 +179,7 @@ def create_video_panel(config, select_file_handler, extract_frames_handler):
     params_group.setStyleSheet("""
         QGroupBox {
             font-weight: bold;
-            font-size: 14px;
+            font-size: 18px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
             color: #2c3e50;
             padding-top: 20px;
@@ -261,7 +203,7 @@ def create_video_panel(config, select_file_handler, extract_frames_handler):
     interval_label.setStyleSheet("""
         QLabel { 
             font-weight: normal; 
-            font-size: 16px; 
+            font-size: 16px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
         }
     """)
@@ -271,7 +213,7 @@ def create_video_panel(config, select_file_handler, extract_frames_handler):
     interval_spinbox.setValue(config.get("frame_interval", 1))
     interval_spinbox.setStyleSheet("""
         QSpinBox { 
-            font-size: 16px; 
+            font-size: 16px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
             padding: 6px;
         }
@@ -288,7 +230,7 @@ def create_video_panel(config, select_file_handler, extract_frames_handler):
     max_frames_label.setStyleSheet("""
         QLabel { 
             font-weight: normal; 
-            font-size: 12px; 
+            font-size: 16px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
         }
     """)
@@ -299,7 +241,7 @@ def create_video_panel(config, select_file_handler, extract_frames_handler):
     max_frames_spinbox.setSpecialValueText("无限制")
     max_frames_spinbox.setStyleSheet("""
         QSpinBox { 
-            font-size: 12px; 
+            font-size: 16px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
             padding: 4px;
         }
@@ -313,7 +255,7 @@ def create_video_panel(config, select_file_handler, extract_frames_handler):
     layout.addWidget(params_group)
     
     # 操作按钮
-    extract_btn = create_button("提取帧", "#6c757d", "large")
+    extract_btn = create_button("提取帧", styles.COLORS["primary"], "large")
     # 设置按钮的尺寸策略
     extract_btn.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
     extract_btn.clicked.connect(extract_frames_handler)
@@ -324,7 +266,7 @@ def create_video_panel(config, select_file_handler, extract_frames_handler):
     nav_group.setStyleSheet("""
         QGroupBox {
             font-weight: bold;
-            font-size: 14px;
+            font-size: 18px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
             color: #2c3e50;
             padding-top: 20px;
@@ -344,8 +286,8 @@ def create_video_panel(config, select_file_handler, extract_frames_handler):
     # 导航按钮
     nav_buttons_layout = QHBoxLayout()
     nav_buttons_layout.setSpacing(8)
-    prev_frame_btn = create_button("上一张", "#6c757d", "medium")
-    next_frame_btn = create_button("下一张", "#6c757d", "medium")
+    prev_frame_btn = create_button("上一张", styles.COLORS["primary"], "medium")
+    next_frame_btn = create_button("下一张", styles.COLORS["primary"], "medium")
     nav_buttons_layout.addWidget(prev_frame_btn)
     nav_buttons_layout.addWidget(next_frame_btn)
     nav_layout.addLayout(nav_buttons_layout)
@@ -357,7 +299,7 @@ def create_video_panel(config, select_file_handler, extract_frames_handler):
     goto_label.setStyleSheet("""
         QLabel { 
             font-weight: normal; 
-            font-size: 12px; 
+            font-size: 16px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
         }
     """)
@@ -367,12 +309,12 @@ def create_video_panel(config, select_file_handler, extract_frames_handler):
     frame_spinbox.setValue(0)
     frame_spinbox.setStyleSheet("""
         QSpinBox { 
-            font-size: 12px; 
+            font-size: 16px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
             padding: 4px;
         }
     """)
-    goto_btn = create_button("跳转", "#6c757d", "small")
+    goto_btn = create_button("跳转", styles.COLORS["primary"], "small")
     goto_layout.addWidget(goto_label)
     goto_layout.addWidget(frame_spinbox)
     goto_layout.addWidget(goto_btn)
@@ -390,10 +332,8 @@ def create_video_panel(config, select_file_handler, extract_frames_handler):
     return panel, video_line_edit, interval_spinbox, max_frames_spinbox, extract_btn, prev_frame_btn, next_frame_btn, frame_spinbox, goto_btn
 
 
-def create_annotate_panel():
+def create_annotate_panel() -> QWidget:
     """创建标注面板"""
-    from PyQt5.QtWidgets import QWidget
-    
     panel = QWidget()
     layout = QVBoxLayout(panel)
     layout.setSpacing(12)
@@ -402,7 +342,7 @@ def create_annotate_panel():
     title_label = QLabel("图像标注")
     title_label.setStyleSheet("""
         QLabel {
-            font-size: 14px;
+            font-size: 18px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
             font-weight: bold;
             color: #2c3e50;
@@ -415,7 +355,7 @@ def create_annotate_panel():
     desc_label = QLabel("在此面板中可以进行图像标注操作")
     desc_label.setStyleSheet("""
         QLabel {
-            font-size: 12px;
+            font-size: 16px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
             color: #6c757d;
             margin-bottom: 15px;
@@ -424,7 +364,7 @@ def create_annotate_panel():
     layout.addWidget(desc_label)
     
     # 功能按钮
-    annotate_btn = create_button("开始标注", "#6c757d", "large")
+    annotate_btn = create_button("开始标注", styles.COLORS["primary"], "large")
     layout.addWidget(annotate_btn)
     
     # 标注工具组
@@ -432,7 +372,7 @@ def create_annotate_panel():
     tools_group.setStyleSheet("""
         QGroupBox {
             font-weight: bold;
-            font-size: 14px;
+            font-size: 18px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
             color: #2c3e50;
             padding-top: 20px;
@@ -445,9 +385,9 @@ def create_annotate_panel():
     """)
     tools_layout = QVBoxLayout(tools_group)
     
-    rect_btn = create_button("矩形工具", "#6c757d", "medium")
-    circle_btn = create_button("圆形工具", "#6c757d", "medium")
-    polygon_btn = create_button("多边形工具", "#6c757d", "medium")
+    rect_btn = create_button("矩形工具", styles.COLORS["primary"], "medium")
+    circle_btn = create_button("圆形工具", styles.COLORS["primary"], "medium")
+    polygon_btn = create_button("多边形工具", styles.COLORS["primary"], "medium")
     
     tools_layout.addWidget(rect_btn)
     tools_layout.addWidget(circle_btn)
@@ -461,10 +401,8 @@ def create_annotate_panel():
     return panel
 
 
-def create_settings_panel(config):
+def create_settings_panel(config: dict) -> Tuple:
     """创建设置面板"""
-    from PyQt5.QtWidgets import QWidget
-    
     panel = QWidget()
     layout = QVBoxLayout(panel)
     layout.setSpacing(12)
@@ -473,7 +411,7 @@ def create_settings_panel(config):
     title_label = QLabel("设置")
     title_label.setStyleSheet("""
         QLabel {
-            font-size: 14px;
+            font-size: 18px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
             font-weight: bold;
             color: #2c3e50;
@@ -486,7 +424,7 @@ def create_settings_panel(config):
     desc_label = QLabel("在此面板中可以进行程序设置")
     desc_label.setStyleSheet("""
         QLabel {
-            font-size: 12px;
+            font-size: 16px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
             color: #6c757d;
             margin-bottom: 15px;
@@ -495,7 +433,7 @@ def create_settings_panel(config):
     layout.addWidget(desc_label)
     
     # 设置选项
-    settings_btn = create_button("保存设置", "#6c757d", "large")
+    settings_btn = create_button("保存设置", styles.COLORS["primary"], "large")
     layout.addWidget(settings_btn)
     
     # 输出目录设置
@@ -503,7 +441,7 @@ def create_settings_panel(config):
     output_group.setStyleSheet("""
         QGroupBox {
             font-weight: bold;
-            font-size: 14px;
+            font-size: 18px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
             color: #2c3e50;
             padding-top: 20px;
@@ -520,7 +458,7 @@ def create_settings_panel(config):
     output_label.setStyleSheet("""
         QLabel { 
             font-weight: normal; 
-            font-size: 12px; 
+            font-size: 16px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
         }
     """)
@@ -532,12 +470,12 @@ def create_settings_panel(config):
     output_dir_line_edit.setText(config.get("output_dir", "./output"))
     output_dir_line_edit.setStyleSheet("""
         QLineEdit { 
-            font-size: 12px; 
+            font-size: 16px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
             padding: 6px;
         }
     """)
-    output_browse_btn = create_button("浏览", "#6c757d", "small")
+    output_browse_btn = create_button("浏览", styles.COLORS["primary"], "small")
     output_dir_layout.addWidget(output_dir_line_edit)
     output_dir_layout.addWidget(output_browse_btn)
     output_layout.addLayout(output_dir_layout)
