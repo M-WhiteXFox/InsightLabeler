@@ -1,4 +1,7 @@
 {
-    "last_dir": "./",
-    "theme": "light"
+    "video_path": "D:/Github/InsightLabeler/videos/gzx_1.mp4",
+    "output_dir": "D:\\Github\\InsightLabeler\\output",
+    "frame_interval": 5,
+    "max_frames": 100,
+    "quality": 95
 }

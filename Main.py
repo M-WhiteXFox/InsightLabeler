@@ -1,7 +1,9 @@
-import tkinter as tk
-from InsightLabelmeMain import YoloAnnotator
+import sys
+from PyQt5.QtWidgets import QApplication
+from LabelerPyQt5 import MainWindow
 
 if __name__ == '__main__':
-    root = tk.Tk()
-    app = YoloAnnotator(root)
-    root.mainloop()
+    app = QApplication(sys.argv)
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec_())
