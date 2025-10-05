@@ -7,7 +7,7 @@ import sys
 from typing import Tuple, Any
 from functools import partial
 
-from PyQt5.QtWidgets import QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QGroupBox, QFrame, QSpinBox, QLineEdit, QStackedWidget, QSizePolicy, QWidget
+from PyQt5.QtWidgets import QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QGroupBox, QFrame, QSpinBox, QLineEdit, QStackedWidget, QSizePolicy, QWidget, QSlider
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
 
@@ -320,8 +320,58 @@ def create_video_panel(config: dict, select_file_handler: callable,
     goto_layout.addWidget(goto_btn)
     nav_layout.addLayout(goto_layout)
     
+    # 帧信息标签
+    frame_info_label = QLabel("帧：- / -")
+    frame_info_label.setStyleSheet("""
+        QLabel { 
+            font-weight: normal; 
+            font-size: 16px;
+            font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+        }
+    """)
+    nav_layout.addWidget(frame_info_label)
+    
+    # 进度条
+    progress_slider = QSlider(Qt.Horizontal)
+    progress_slider.setMinimum(0)
+    progress_slider.setMaximum(1000)  # 增加精度，支持更平滑的拖动
+    progress_slider.setValue(0)
+    progress_slider.setTickPosition(QSlider.NoTicks)  # 移除刻度，让拖动更平滑
+    progress_slider.setTracking(True)  # 启用跟踪，提供实时反馈
+    progress_slider.setSingleStep(1)  # 设置单步值为1，确保连续拖动
+    progress_slider.setStyleSheet("""
+        QSlider::groove:horizontal {
+            border: 1px solid #999999;
+            height: 8px;
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #B1B1B1, stop:1 #c4c4c4);
+            margin: 2px 0;
+            border-radius: 4px;
+        }
+        QSlider::handle:horizontal {
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #6c757d, stop:1 #495057);
+            border: 1px solid #5c5c5c;
+            width: 18px;
+            margin: -2px 0;
+            border-radius: 3px;
+        }
+        QSlider::handle:horizontal:hover {
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #495057, stop:1 #343a40);
+        }
+        QSlider::sub-page:horizontal {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #6c757d, stop:1 #495057);
+            border: 1px solid #5c5c5c;
+            height: 8px;
+            border-radius: 4px;
+        }
+    """)
+    nav_layout.addWidget(progress_slider)
+    
     nav_layout.addStretch()
     layout.addWidget(nav_group)
+    
+    # 保存当前帧按钮
+    save_frame_btn = create_button("保存当前帧", styles.COLORS["primary"], "large")
+    layout.addWidget(save_frame_btn)
     
     layout.addStretch()
     
@@ -329,7 +379,7 @@ def create_video_panel(config: dict, select_file_handler: callable,
     panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
     
     # 返回面板和相关控件
-    return panel, video_line_edit, interval_spinbox, max_frames_spinbox, extract_btn, prev_frame_btn, next_frame_btn, frame_spinbox, goto_btn
+    return panel, video_line_edit, interval_spinbox, max_frames_spinbox, extract_btn, prev_frame_btn, next_frame_btn, frame_spinbox, goto_btn, frame_info_label, save_frame_btn, progress_slider
 
 
 def create_annotate_panel() -> QWidget:
@@ -385,6 +435,19 @@ def create_annotate_panel() -> QWidget:
     """)
     tools_layout = QVBoxLayout(tools_group)
     
+    # 新建标注框按钮
+    new_box_btn = create_button("新建标注框", styles.COLORS["primary"], "large", checkable=True)
+    new_box_btn.setStyleSheet(styles.get_button_style("large", styles.COLORS["primary"]) + """
+        QPushButton:checked {
+            background-color: #28a745;
+            border: 2px solid #1e7e34;
+        }
+        QPushButton:checked:hover {
+            background-color: #218838;
+        }
+    """)
+    tools_layout.addWidget(new_box_btn)
+    
     rect_btn = create_button("矩形工具", styles.COLORS["primary"], "medium")
     circle_btn = create_button("圆形工具", styles.COLORS["primary"], "medium")
     polygon_btn = create_button("多边形工具", styles.COLORS["primary"], "medium")
@@ -398,7 +461,7 @@ def create_annotate_panel() -> QWidget:
     
     # 设置面板的尺寸策略
     panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
-    return panel
+    return panel, annotate_btn, rect_btn, circle_btn, polygon_btn, new_box_btn
 
 
 def create_settings_panel(config: dict) -> Tuple:

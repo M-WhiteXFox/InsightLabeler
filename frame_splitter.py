@@ -1,6 +1,6 @@
 """
 视频帧处理模块
-负责视频帧的提取、管理和导航功能
+负责视频帧的提取、读取、管理与导航功能
 """
 
 import cv2
@@ -9,24 +9,20 @@ import argparse
 import json
 from pathlib import Path
 import glob
-from typing import Dict, List, Optional, Callable, Any, Union
+from typing import Dict, List, Optional, Callable, Any
 
 
-def extract_frames(config: Optional[Dict[str, Any]] = None, progress_callback: Optional[Callable[[int, int], None]] = None, 
+# ==============================
+# 提取视频帧并保存为图片文件
+# ==============================
+def extract_frames(config: Optional[Dict[str, Any]] = None,
+                   progress_callback: Optional[Callable[[int, int], None]] = None,
                    verbose: bool = True, **kwargs) -> bool:
     """
-    从视频中提取帧
-
-    参数:
-        config: 配置字典
-        progress_callback: 进度回调函数，接收当前进度和总帧数
-        verbose: 是否打印详细日志
-        **kwargs: 覆盖配置的参数
-    返回:
-        是否成功提取帧
+    从视频中提取帧并保存为图片文件
     """
     try:
-        # 合并配置和参数
+        # 合并配置
         if config is None:
             config = {}
 
@@ -37,7 +33,6 @@ def extract_frames(config: Optional[Dict[str, Any]] = None, progress_callback: O
         max_frames = kwargs.get('max_frames', config.get('max_frames', None))
         quality = kwargs.get('quality', config.get('quality', 95))
 
-        # 验证必要参数
         if not video_path:
             if verbose:
                 print("错误: 未指定视频文件路径")
@@ -48,22 +43,18 @@ def extract_frames(config: Optional[Dict[str, Any]] = None, progress_callback: O
                 print(f"错误: 视频文件不存在: {video_path}")
             return False
 
-        # 确保输出目录存在
         Path(output_dir).mkdir(parents=True, exist_ok=True)
 
-        # 打开视频文件
         cap = cv2.VideoCapture(video_path)
-
         if not cap.isOpened():
             if verbose:
                 print(f"错误: 无法打开视频文件 {video_path}")
             return False
 
         try:
-            # 获取视频信息
             fps = cap.get(cv2.CAP_PROP_FPS)
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            duration = total_frames / fps
+            duration = total_frames / fps if fps else 0
 
             if verbose:
                 print(f"视频信息:")
@@ -82,31 +73,23 @@ def extract_frames(config: Optional[Dict[str, Any]] = None, progress_callback: O
 
             while True:
                 ret, frame = cap.read()
-
                 if not ret:
                     break
 
-                # 按间隔提取帧
                 if frame_count % frame_interval == 0:
-                    # 生成文件名
                     filename = f"frame_{saved_count:06d}.jpg"
                     filepath = os.path.join(output_dir, filename)
-
-                    # 保存帧
                     cv2.imwrite(filepath, frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
                     saved_count += 1
 
-                    # 调用进度回调函数
                     if progress_callback:
                         progress_callback(frame_count, total_frames)
 
-                    if saved_count % 10 == 0 and verbose:  # 每10帧打印一次进度
+                    if saved_count % 10 == 0 and verbose:
                         print(f"已保存: {filename} (进度: {frame_count}/{total_frames} 帧)")
 
-                    # 检查是否达到最大帧数限制
                     if max_frames and saved_count >= max_frames:
                         break
-
                 frame_count += 1
 
             if verbose:
@@ -114,7 +97,6 @@ def extract_frames(config: Optional[Dict[str, Any]] = None, progress_callback: O
                 print(f"输出目录: {output_dir}")
             return True
         finally:
-            # 释放资源
             cap.release()
     except Exception as e:
         if verbose:
@@ -122,100 +104,71 @@ def extract_frames(config: Optional[Dict[str, Any]] = None, progress_callback: O
         return False
 
 
-def extract_frames_with_custom_interval(video_path: str, output_dir: str, interval: int, 
-                                        max_frames: Optional[int] = None, quality: int = 95) -> bool:
+# ==============================
+# 从视频直接读取指定帧（不保存）
+# ==============================
+def read_frame_by_index(video_path: str, frame_index: int) -> Optional[Any]:
     """
-    使用自定义间隔提取视频帧
-    
+    直接从视频文件中读取指定帧并返回图像矩阵（不保存）
+
     参数:
         video_path: 视频文件路径
-        output_dir: 输出目录
-        interval: 帧间隔
-        max_frames: 最大帧数
-        quality: 图像质量 (1-100)
+        frame_index: 目标帧索引（0 开始）
     返回:
-        是否成功提取帧
+        ndarray (BGR图像) 或 None
     """
-    config = {
-        "video_path": video_path,
-        "output_dir": output_dir,
-        "frame_interval": interval,
-        "max_frames": max_frames,
-        "quality": quality
-    }
-    
-    return extract_frames(config)
+    if not os.path.exists(video_path):
+        print(f"错误: 视频文件不存在: {video_path}")
+        return None
+
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        print("错误: 无法打开视频文件")
+        return None
+
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    index = max(0, min(frame_index, total_frames - 1))
+    cap.set(cv2.CAP_PROP_POS_FRAMES, index)
+    ret, frame = cap.read()
+    cap.release()
+
+    if not ret or frame is None:
+        print("警告: 无法读取指定帧")
+        return None
+    return frame
 
 
+# ==============================
+# 获取输出文件夹中的帧列表
+# ==============================
 def get_frame_files(output_dir: str) -> List[str]:
-    """
-    获取帧文件列表
-    
-    参数:
-        output_dir: 帧文件所在目录
-    返回:
-        帧文件路径列表
-    """
     if os.path.exists(output_dir):
         return sorted(glob.glob(os.path.join(output_dir, "frame_*.jpg")))
     return []
 
 
 def load_frame(frame_files: List[str], frame_index: int) -> Optional[str]:
-    """
-    加载指定索引的帧
-    
-    参数:
-        frame_files: 帧文件列表
-        frame_index: 帧索引
-    返回:
-        帧文件路径或None（如果索引无效）
-    """
     if 0 <= frame_index < len(frame_files):
         return frame_files[frame_index]
     return None
 
 
 def get_previous_frame_index(current_index: int) -> int:
-    """
-    获取上一帧索引
-    
-    参数:
-        current_index: 当前帧索引
-    返回:
-        上一帧索引
-    """
     return max(0, current_index - 1)
 
 
 def get_next_frame_index(current_index: int, max_index: int) -> int:
-    """
-    获取下一帧索引
-    
-    参数:
-        current_index: 当前帧索引
-        max_index: 最大帧索引
-    返回:
-        下一帧索引
-    """
     return min(max_index, current_index + 1)
 
 
 def goto_frame_index(target_index: int, max_index: int) -> int:
-    """
-    跳转到指定帧索引
-    
-    参数:
-        target_index: 目标帧索引
-        max_index: 最大帧索引
-    返回:
-        有效帧索引
-    """
     return max(0, min(max_index, target_index))
 
 
+# ==============================
+# 创建示例配置文件
+# ==============================
 def create_sample_config() -> None:
-    """创建示例配置文件"""
     sample_config = {
         "video_path": "",
         "output_dir": "./output",
@@ -226,32 +179,30 @@ def create_sample_config() -> None:
 
     with open("config_sample.json", 'w', encoding='utf-8') as f:
         json.dump(sample_config, f, indent=4, ensure_ascii=False)
-
     print("示例配置文件已创建: config_sample.json")
 
 
+# ==============================
+# 命令行入口
+# ==============================
 def main() -> None:
-    parser = argparse.ArgumentParser(description="视频帧切割工具 ")
-    parser.add_argument("--config", default="config.json", help="配置文件路径 (默认: config.json)")
-    parser.add_argument("--video_path", help="输入视频文件路径 (覆盖配置文件)")
-    parser.add_argument("--output", "-o", help="输出目录 (覆盖配置文件)")
-    parser.add_argument("--interval", "-i", type=int, help="帧间隔 (覆盖配置文件)")
-    parser.add_argument("--max_frames", "-m", type=int, help="最大提取帧数 (覆盖配置文件)")
-    parser.add_argument("--quality", "-q", type=int, help="图像质量 (1-100) (覆盖配置文件)")
+    parser = argparse.ArgumentParser(description="视频帧处理工具")
+    parser.add_argument("--video_path", help="输入视频文件路径")
+    parser.add_argument("--output", "-o", help="输出目录")
+    parser.add_argument("--interval", "-i", type=int, help="帧间隔")
+    parser.add_argument("--max_frames", "-m", type=int, help="最大帧数")
+    parser.add_argument("--quality", "-q", type=int, help="图像质量 (1-100)")
     parser.add_argument("--create_sample", action="store_true", help="创建示例配置文件")
 
     args = parser.parse_args()
 
-    # 创建示例配置文件
     if args.create_sample:
         create_sample_config()
         return
 
-    # 加载配置
     import Utils
     config = Utils.load_config()
 
-    # 准备参数
     kwargs = {}
     if args.video_path:
         kwargs['video_path'] = args.video_path
@@ -264,9 +215,4 @@ def main() -> None:
     if args.quality:
         kwargs['quality'] = args.quality
 
-    # 使用帧间隔提取
     extract_frames(config, **kwargs)
-
-
-if __name__ == "__main__":
-    main()
