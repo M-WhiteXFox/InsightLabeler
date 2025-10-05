@@ -413,9 +413,6 @@ def create_annotate_panel() -> QWidget:
     """)
     layout.addWidget(desc_label)
     
-    # 功能按钮
-    annotate_btn = create_button("开始标注", styles.COLORS["primary"], "large")
-    layout.addWidget(annotate_btn)
     
     # 标注工具组
     tools_group = QGroupBox("标注工具")
@@ -448,20 +445,13 @@ def create_annotate_panel() -> QWidget:
     """)
     tools_layout.addWidget(new_box_btn)
     
-    rect_btn = create_button("矩形工具", styles.COLORS["primary"], "medium")
-    circle_btn = create_button("圆形工具", styles.COLORS["primary"], "medium")
-    polygon_btn = create_button("多边形工具", styles.COLORS["primary"], "medium")
-    
-    tools_layout.addWidget(rect_btn)
-    tools_layout.addWidget(circle_btn)
-    tools_layout.addWidget(polygon_btn)
     layout.addWidget(tools_group)
     
     layout.addStretch()
     
     # 设置面板的尺寸策略
     panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
-    return panel, annotate_btn, rect_btn, circle_btn, polygon_btn, new_box_btn
+    return panel, new_box_btn
 
 
 def create_settings_panel(config: dict) -> Tuple:
@@ -545,8 +535,69 @@ def create_settings_panel(config: dict) -> Tuple:
     
     layout.addWidget(output_group)
     
+    # 模型设置
+    model_group = QGroupBox("自动标注模型")
+    model_group.setStyleSheet("""
+        QGroupBox {
+            font-weight: bold;
+            font-size: 18px;
+            font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+            color: #2c3e50;
+            padding-top: 20px;
+        }
+        QGroupBox::title {
+            subcontrol-origin: margin;
+            subcontrol-position: top left;
+            padding: 5px 10px;
+        }
+    """)
+    model_layout = QVBoxLayout(model_group)
+    
+    model_label = QLabel("YOLO模型路径:")
+    model_label.setStyleSheet("""
+        QLabel { 
+            font-weight: normal; 
+            font-size: 16px;
+            font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+        }
+    """)
+    model_layout.addWidget(model_label)
+    
+    model_path_layout = QHBoxLayout()
+    model_path_layout.setSpacing(6)
+    model_path_line_edit = QLineEdit()
+    model_path_line_edit.setText(config.get("model_path", ""))
+    if not model_path_line_edit.text():
+        model_path_line_edit.setPlaceholderText("请选择YOLO模型文件 (.pt)")
+    model_path_line_edit.setStyleSheet("""
+        QLineEdit { 
+            font-size: 16px;
+            font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+            padding: 6px;
+        }
+    """)
+    model_browse_btn = create_button("浏览", styles.COLORS["primary"], "small")
+    model_path_layout.addWidget(model_path_line_edit)
+    model_path_layout.addWidget(model_browse_btn)
+    model_layout.addLayout(model_path_layout)
+    
+    # 模型状态显示
+    model_status_label = QLabel("模型状态: 未加载")
+    model_status_label.setStyleSheet("""
+        QLabel { 
+            font-weight: normal; 
+            font-size: 14px;
+            font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+            color: #6c757d;
+            margin-top: 5px;
+        }
+    """)
+    model_layout.addWidget(model_status_label)
+    
+    layout.addWidget(model_group)
+    
     layout.addStretch()
     
     # 设置面板的尺寸策略
     panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
-    return panel, output_dir_line_edit, settings_btn, output_browse_btn
+    return panel, output_dir_line_edit, settings_btn, output_browse_btn, model_path_line_edit, model_browse_btn, model_status_label

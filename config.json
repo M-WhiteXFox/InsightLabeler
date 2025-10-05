@@ -4,5 +4,6 @@
     "frame_interval": 5,
     "max_frames": 100,
     "quality": 95,
-    "last_dir": "./"
+    "last_dir": "./",
+    "model_path": "D:/Github/InsightLabeler/model/train_2/weights/best.pt"
 }

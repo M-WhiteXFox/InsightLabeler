@@ -17,7 +17,8 @@ DEFAULT_CONFIG = {
     "frame_interval": 1,
     "max_frames": None,
     "quality": 95,
-    "last_dir": "./"
+    "last_dir": "./",
+    "model_path": ""
 }
 
 

@@ -20,6 +20,7 @@ import styles
 import cv2
 
 from annotate_canvas import AnnotateCanvas
+from auto_annotator import AutoAnnotator
 
 
 class MainWindow(QMainWindow):
@@ -27,6 +28,10 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.config = Utils.load_config()
         self.frame_controller = FrameController()
+        
+        # 初始化自动标注器
+        self.auto_annotator = AutoAnnotator(self.config.get("model_path", ""))
+        self._last_model_path = self.config.get("model_path", "")
 
         # ====== UI组件引用 ======
         self.image_label: QLabel = None
@@ -171,8 +176,7 @@ class MainWindow(QMainWindow):
         # 标注面板
         annotate_panel_data = ui_components.create_annotate_panel()
         self.annotate_panel = annotate_panel_data[0]
-        (self.annotate_start_btn, self.rect_btn, self.circle_btn, 
-         self.polygon_btn, self.new_box_btn) = annotate_panel_data[1:]
+        self.new_box_btn = annotate_panel_data[1]
         
         # 连接新建框按钮信号
         self.new_box_btn.toggled.connect(self.toggle_draw_mode)
@@ -183,8 +187,14 @@ class MainWindow(QMainWindow):
         settings_panel_data = ui_components.create_settings_panel(self.config)
         self.settings_panel = settings_panel_data[0]
         (self.output_dir_line_edit, self.settings_btn,
-         self.output_browse_btn) = settings_panel_data[1:]
+         self.output_browse_btn, self.model_path_line_edit, 
+         self.model_browse_btn, self.model_status_label) = settings_panel_data[1:]
         self.output_browse_btn.clicked.connect(self.select_output_dir)
+        self.model_browse_btn.clicked.connect(self.select_model_file)
+        self.settings_btn.clicked.connect(self.save_settings)
+        
+        # 初始化模型状态显示
+        self.update_model_status()
 
         self.function_panel.addWidget(self.settings_panel)
         parent_layout.addWidget(self.function_panel, stretch=1)
@@ -238,6 +248,110 @@ class MainWindow(QMainWindow):
             self.config["output_dir"] = directory
             Utils.save_config(self.config)
             self.frame_controller.config = self.config
+    
+    def select_model_file(self) -> None:
+        """选择YOLO模型文件"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "选择YOLO模型文件", "./", "PyTorch模型文件 (*.pt);;所有文件 (*)"
+        )
+        if file_path:
+            self.model_path_line_edit.setText(file_path)
+            self.config["model_path"] = file_path
+            Utils.save_config(self.config)
+            
+            # 重新初始化自动标注器
+            self.auto_annotator = AutoAnnotator(file_path)
+            
+            # 更新模型状态显示
+            if self.auto_annotator.is_available():
+                self.model_status_label.setText("模型状态: 已加载")
+                self.model_status_label.setStyleSheet("""
+                    QLabel { 
+                        font-weight: normal; 
+                        font-size: 14px;
+                        font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+                        color: #28a745;
+                        margin-top: 5px;
+                    }
+                """)
+            else:
+                self.model_status_label.setText("模型状态: 加载失败")
+                self.model_status_label.setStyleSheet("""
+                    QLabel { 
+                        font-weight: normal; 
+                        font-size: 14px;
+                        font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+                        color: #dc3545;
+                        margin-top: 5px;
+                    }
+                """)
+    
+    def save_settings(self) -> None:
+        """保存设置"""
+        # 更新配置
+        self.config["output_dir"] = self.output_dir_line_edit.text()
+        self.config["model_path"] = self.model_path_line_edit.text()
+        
+        # 保存配置
+        Utils.save_config(self.config)
+        self.frame_controller.config = self.config
+        
+        # 如果模型路径发生变化，重新初始化自动标注器
+        if self.config["model_path"] != getattr(self, '_last_model_path', ''):
+            self.auto_annotator = AutoAnnotator(self.config["model_path"])
+            self._last_model_path = self.config["model_path"]
+            
+            # 更新模型状态显示
+            if self.auto_annotator.is_available():
+                self.model_status_label.setText("模型状态: 已加载")
+                self.model_status_label.setStyleSheet("""
+                    QLabel { 
+                        font-weight: normal; 
+                        font-size: 14px;
+                        font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+                        color: #28a745;
+                        margin-top: 5px;
+                    }
+                """)
+            else:
+                self.model_status_label.setText("模型状态: 加载失败")
+                self.model_status_label.setStyleSheet("""
+                    QLabel { 
+                        font-weight: normal; 
+                        font-size: 14px;
+                        font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+                        color: #dc3545;
+                        margin-top: 5px;
+                    }
+                """)
+        
+        QMessageBox.information(self, "成功", "设置已保存！")
+    
+    def update_model_status(self) -> None:
+        """更新模型状态显示"""
+        if hasattr(self, 'model_status_label'):
+            if self.auto_annotator.is_available():
+                self.model_status_label.setText("模型状态: 已加载")
+                self.model_status_label.setStyleSheet("""
+                    QLabel { 
+                        font-weight: normal; 
+                        font-size: 14px;
+                        font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+                        color: #28a745;
+                        margin-top: 5px;
+                    }
+                """)
+            else:
+                self.model_status_label.setText("模型状态: 未加载")
+                self.model_status_label.setStyleSheet("""
+                    QLabel { 
+                        font-weight: normal; 
+                        font-size: 14px;
+                        font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+                        color: #6c757d;
+                        margin-top: 5px;
+                    }
+                """)
 
     # =============================
     # 其他逻辑保持不变
@@ -253,6 +367,12 @@ class MainWindow(QMainWindow):
             if index == 1:  # 图像标注面板
                 self.image_label.set_edit_enabled(True)
                 self.image_label.set_draw_mode(self.new_box_btn.isChecked())
+                
+                # 切换到图像标注面板时，如果当前帧不为空，进行自动标注
+                if self.current_frame_mat is not None:
+                    boxes = self.auto_annotator.predict(self.current_frame_mat)
+                    if boxes:
+                        self.image_label.load_boxes(boxes)
             else:  # 离开标注面板
                 self.image_label.set_edit_enabled(False)
                 self.new_box_btn.setChecked(False)
@@ -327,6 +447,12 @@ class MainWindow(QMainWindow):
         # 使用新的annotate_canvas设置图像
         self.image_label.set_image(pixmap)
         self.image_label.update()
+        
+        # 如果在图像标注面板且当前帧不为空，进行自动标注
+        if self.function_panel.currentIndex() == 1 and self.current_frame_mat is not None:
+            boxes = self.auto_annotator.predict(self.current_frame_mat)
+            if boxes:
+                self.image_label.load_boxes(boxes)
         
         # 更新帧信息标签
         self.update_frame_info()
@@ -430,6 +556,13 @@ class MainWindow(QMainWindow):
                 self.progress_slider.blockSignals(False)
         except Exception as e:
             print(f"进度条跳转时出错: {e}")
+            
+    def keyPressEvent(self, event):
+        """处理键盘事件"""
+        # 将键盘事件传递给图像标注画布
+        if hasattr(self, 'image_label') and isinstance(self.image_label, AnnotateCanvas):
+            self.image_label.keyPressEvent(event)
+        super().keyPressEvent(event)
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
