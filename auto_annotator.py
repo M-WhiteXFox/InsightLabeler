@@ -56,18 +56,23 @@ class AutoAnnotator:
             print(f"错误: 加载YOLO模型失败: {e}")
             self.model = None
     
-    def predict(self, frame: np.ndarray) -> List[Tuple[float, float, float, float, str]]:
+    def predict(self, frame: np.ndarray, confidence_threshold: float = 0.5) -> List[Tuple[float, float, float, float, str]]:
         """
         对输入帧进行目标检测
         
         参数:
             frame: 输入图像帧 (numpy数组)
+            confidence_threshold: 置信度阈值 (0.0-1.0)
             
         返回:
             检测结果列表，格式为 [(x1, y1, x2, y2, label), ...]
             如果模型未加载或检测失败，返回空列表
         """
         if self.model is None:
+            return []
+        
+        if frame is None or frame.size == 0:
+            print("警告: 输入帧为空")
             return []
         
         try:
@@ -77,26 +82,32 @@ class AutoAnnotator:
             boxes = []
             for result in results:
                 # 获取边界框和类别信息
-                if result.boxes is not None:
+                if result.boxes is not None and len(result.boxes) > 0:
                     for i in range(len(result.boxes)):
-                        # 获取边界框坐标 (x1, y1, x2, y2)
-                        box = result.boxes.xyxy[i].cpu().numpy()
-                        x1, y1, x2, y2 = box
-                        
-                        # 获取类别ID和置信度
-                        cls_id = int(result.boxes.cls[i].cpu().numpy())
-                        conf = float(result.boxes.conf[i].cpu().numpy())
-                        
-                        # 获取类别名称
-                        if cls_id < len(self.class_names):
-                            label = self.class_names[cls_id]
-                        else:
-                            label = f"class_{cls_id}"
-                        
-                        # 添加置信度到标签中
-                        label_with_conf = f"{label} ({conf:.2f})"
-                        
-                        boxes.append((float(x1), float(y1), float(x2), float(y2), label_with_conf))
+                        try:
+                            # 获取边界框坐标 (x1, y1, x2, y2)
+                            box = result.boxes.xyxy[i].cpu().numpy()
+                            x1, y1, x2, y2 = box
+                            
+                            # 获取类别ID和置信度
+                            cls_id = int(result.boxes.cls[i].cpu().numpy())
+                            conf = float(result.boxes.conf[i].cpu().numpy())
+                            
+                            # 只保留置信度高于阈值的检测结果
+                            if conf >= confidence_threshold:
+                                # 获取类别名称
+                                if cls_id < len(self.class_names):
+                                    label = self.class_names[cls_id]
+                                else:
+                                    label = f"class_{cls_id}"
+                                
+                                # 添加置信度到标签中
+                                label_with_conf = f"{label} ({conf:.2f})"
+                                
+                                boxes.append((float(x1), float(y1), float(x2), float(y2), label_with_conf))
+                        except Exception as box_error:
+                            print(f"处理检测框时出错: {box_error}")
+                            continue
             
             return boxes
             

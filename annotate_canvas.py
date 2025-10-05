@@ -40,11 +40,18 @@ class AnnotateCanvas(QLabel):
         
     def set_image(self, pixmap):
         """设置底图，开启 auto_fit=True 并调用 fit_to_window()"""
-        self.base_pixmap = pixmap
-        self.auto_fit = True
-        self.fit_to_window()
-        self.clear_boxes()
-        self.update()
+        try:
+            if pixmap is None or pixmap.isNull():
+                print("警告: 尝试设置无效的图像")
+                return
+                
+            self.base_pixmap = pixmap
+            self.auto_fit = True
+            self.fit_to_window()
+            self.clear_boxes()
+            self.update()
+        except Exception as e:
+            print(f"设置图像时出错: {e}")
         
     def fit_to_window(self):
         """让图片以 95% 的比例适配当前控件尺寸"""

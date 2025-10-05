@@ -26,12 +26,20 @@ from auto_annotator import AutoAnnotator
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.config = Utils.load_config()
-        self.frame_controller = FrameController()
-        
-        # 初始化自动标注器
-        self.auto_annotator = AutoAnnotator(self.config.get("model_path", ""))
-        self._last_model_path = self.config.get("model_path", "")
+        try:
+            self.config = Utils.load_config()
+            self.frame_controller = FrameController()
+            
+            # 初始化自动标注器
+            self.auto_annotator = AutoAnnotator(self.config.get("model_path", ""))
+            self._last_model_path = self.config.get("model_path", "")
+        except Exception as e:
+            print(f"初始化主窗口时出错: {e}")
+            # 使用默认配置
+            self.config = {"video_path": "", "output_dir": "./output", "model_path": ""}
+            self.frame_controller = FrameController()
+            self.auto_annotator = AutoAnnotator("")
+            self._last_model_path = ""
 
         # ====== UI组件引用 ======
         self.image_label: QLabel = None
@@ -89,6 +97,14 @@ class MainWindow(QMainWindow):
             # 没有视频文件时，使用磁盘帧文件
             self.frame_controller.load_frame(0)
 
+    def __del__(self):
+        """析构函数，确保资源正确释放"""
+        try:
+            if hasattr(self, 'frame_controller'):
+                self.frame_controller.close_video()
+        except Exception as e:
+            print(f"释放资源时出错: {e}")
+
     # =============================
     # 顶部功能按钮栏
     # =============================
@@ -105,16 +121,12 @@ class MainWindow(QMainWindow):
         button_layout = QHBoxLayout(button_bar)
         button_layout.setSpacing(15)
 
-        self.video_btn = ui_components.create_top_button("视频处理")
-        self.video_btn.clicked.connect(lambda: self.switch_function_panel(0))
-        button_layout.addWidget(self.video_btn)
-
-        self.annotate_tab_btn = ui_components.create_top_button("图像标注")
-        self.annotate_tab_btn.clicked.connect(lambda: self.switch_function_panel(1))
-        button_layout.addWidget(self.annotate_tab_btn)
+        self.video_annotate_btn = ui_components.create_top_button("视频标注")
+        self.video_annotate_btn.clicked.connect(lambda: self.switch_function_panel(0))
+        button_layout.addWidget(self.video_annotate_btn)
 
         self.settings_btn_top = ui_components.create_top_button("设置")
-        self.settings_btn_top.clicked.connect(lambda: self.switch_function_panel(2))
+        self.settings_btn_top.clicked.connect(lambda: self.switch_function_panel(1))
         button_layout.addWidget(self.settings_btn_top)
 
         button_layout.addStretch()
@@ -144,25 +156,37 @@ class MainWindow(QMainWindow):
     def create_function_panel_area(self, parent_layout: QHBoxLayout) -> None:
         self.function_panel = ui_components.create_function_panel_area(parent_layout)
 
-        # 视频面板
-        video_panel_data = ui_components.create_video_panel(
+        # 视频标注整合面板
+        video_annotate_panel_data = ui_components.create_video_annotate_panel(
             self.config,
             self.select_file,
             self.extract_frames_handler
         )
-        self.video_panel = video_panel_data[0]
+        self.video_annotate_panel = video_annotate_panel_data[0]
         (self.video_line_edit, self.interval_spinbox, self.max_frames_spinbox,
          self.extract_btn, self.prev_frame_btn, self.next_frame_btn,
          self.frame_spinbox, self.goto_btn, self.frame_info_label, 
-         self.save_frame_btn, self.progress_slider) = video_panel_data[1:]
+         self.save_prediction_btn, self.progress_slider, self.new_box_btn, self.refresh_btn,
+         self.model_path_line_edit, self.model_browse_btn, self.model_status_label,
+         self.prediction_switch, self.confidence_slider, self.confidence_value_label) = video_annotate_panel_data[1:]
 
+        # 连接视频处理相关信号
         self.prev_frame_btn.clicked.connect(self.previous_frame)
         self.next_frame_btn.clicked.connect(self.next_frame)
         self.goto_btn.clicked.connect(self.goto_frame)
-        self.save_frame_btn.clicked.connect(self.save_current_frame)
+        self.save_prediction_btn.clicked.connect(self.save_prediction_results)
         self.progress_slider.sliderPressed.connect(self.on_progress_pressed)
         self.progress_slider.sliderReleased.connect(self.on_progress_released)
         self.progress_slider.valueChanged.connect(self.on_progress_changed)
+        
+        # 连接标注相关信号
+        self.new_box_btn.toggled.connect(self.toggle_draw_mode)
+        self.refresh_btn.clicked.connect(self.refresh_prediction)
+        
+        # 连接模型设置相关信号
+        self.model_browse_btn.clicked.connect(self.select_model_file_annotate)
+        self.prediction_switch.toggled.connect(self.toggle_prediction_switch)
+        self.confidence_slider.valueChanged.connect(self.update_confidence_value)
         
         # 添加拖动状态标志
         self.is_slider_dragging = False
@@ -171,30 +195,33 @@ class MainWindow(QMainWindow):
         self.progress_timer.setSingleShot(True)
         self.progress_timer.timeout.connect(self._jump_to_progress_frame)
 
-        self.function_panel.addWidget(self.video_panel)
-
-        # 标注面板
-        annotate_panel_data = ui_components.create_annotate_panel()
-        self.annotate_panel = annotate_panel_data[0]
-        self.new_box_btn = annotate_panel_data[1]
-        
-        # 连接新建框按钮信号
-        self.new_box_btn.toggled.connect(self.toggle_draw_mode)
-        
-        self.function_panel.addWidget(self.annotate_panel)
+        self.function_panel.addWidget(self.video_annotate_panel)
 
         # 设置面板
         settings_panel_data = ui_components.create_settings_panel(self.config)
         self.settings_panel = settings_panel_data[0]
         (self.output_dir_line_edit, self.settings_btn,
          self.output_browse_btn, self.model_path_line_edit, 
-         self.model_browse_btn, self.model_status_label) = settings_panel_data[1:]
+         self.model_browse_btn, self.model_status_label,
+         self.current_video_path_label) = settings_panel_data[1:]
         self.output_browse_btn.clicked.connect(self.select_output_dir)
         self.model_browse_btn.clicked.connect(self.select_model_file)
         self.settings_btn.clicked.connect(self.save_settings)
         
         # 初始化模型状态显示
         self.update_model_status()
+        
+        # 初始化预测开关状态
+        self.prediction_switch.setChecked(self.config.get("prediction_enabled", False))
+        self.toggle_prediction_switch(self.prediction_switch.isChecked())
+        
+        # 初始化置信度值显示
+        confidence_value = int(self.config.get("confidence_threshold", 0.5) * 100)
+        self.confidence_slider.setValue(confidence_value)
+        self.confidence_value_label.setText(f"{confidence_value}%")
+        
+        # 初始化当前视频输出目录显示
+        self.update_current_video_path_display()
 
         self.function_panel.addWidget(self.settings_panel)
         parent_layout.addWidget(self.function_panel, stretch=1)
@@ -209,8 +236,10 @@ class MainWindow(QMainWindow):
         )
 
         if file_path:
-            line_edit.setText(file_path)
-            self.config[key] = file_path
+            # 标准化路径
+            normalized_path = self.normalize_path(file_path)
+            line_edit.setText(normalized_path)
+            self.config[key] = normalized_path
             Utils.save_config(self.config)
             self.frame_controller.config = self.config
 
@@ -222,75 +251,280 @@ class MainWindow(QMainWindow):
                     self.frame_controller.frame_files = []
                     # 读取首帧（从视频开头开始）
                     self.frame_controller.read_frame(0)
+                    # 更新当前视频输出目录显示
+                    self.update_current_video_path_display()
                 except Exception as e:
                     QMessageBox.warning(self, "错误", str(e))
 
-    def save_current_frame(self):
-        """保存当前帧"""
-        if hasattr(self.frame_controller, 'save_current_frame') and self.frame_controller.is_preview_mode():
-            output_dir = self.config.get("output_dir", "./output")
-            try:
-                saved_path = self.frame_controller.save_current_frame(output_dir)
-                if saved_path:
-                    QMessageBox.information(self, "成功", f"帧已保存到: {saved_path}")
-                else:
-                    QMessageBox.warning(self, "失败", "无法保存当前帧")
-            except Exception as e:
-                QMessageBox.warning(self, "错误", f"保存帧时出错: {str(e)}")
-        else:
-            QMessageBox.warning(self, "提示", "当前不在预览模式下，无法保存帧")
+    def save_prediction_results(self):
+        """保存当前帧的YOLO模型预测结果"""
+        if not hasattr(self, 'current_frame_mat') or self.current_frame_mat is None:
+            QMessageBox.warning(self, "提示", "当前没有可用的帧数据")
+            return
+        
+        if not self.prediction_switch.isChecked():
+            QMessageBox.warning(self, "提示", "请先开启AI预测功能")
+            return
+        
+        if not self.auto_annotator.is_available():
+            QMessageBox.warning(self, "提示", "模型未加载，无法进行预测")
+            return
+        
+        try:
+            # 获取当前帧的预测结果
+            confidence_threshold = self.config.get("confidence_threshold", 0.5)
+            boxes = self.auto_annotator.predict(self.current_frame_mat, confidence_threshold)
+            
+            if not boxes:
+                QMessageBox.information(self, "提示", "当前帧未检测到任何目标")
+                return
+            
+            # 获取视频名称并创建文件夹结构
+            video_path = self.config.get("video_path", "")
+            if video_path:
+                # 从视频路径中提取文件名（不含扩展名）
+                video_name = os.path.splitext(os.path.basename(video_path))[0]
+            else:
+                video_name = "unknown_video"
+            
+            # 创建基于视频名称的文件夹结构
+            base_output_dir = self.config.get("output_dir", "./output")
+            video_output_dir = os.path.join(base_output_dir, video_name)
+            txt_save_dir = os.path.join(video_output_dir, "labels")
+            image_save_dir = os.path.join(video_output_dir, "images")
+            
+            # 确保目录存在
+            os.makedirs(txt_save_dir, exist_ok=True)
+            os.makedirs(image_save_dir, exist_ok=True)
+            
+            # 获取当前帧索引
+            current_frame_index = getattr(self.frame_controller, 'current_frame_index', 0)
+            
+            # 保存YOLO格式的txt文件
+            txt_filename = f"frame_{current_frame_index:06d}.txt"
+            txt_path = os.path.join(txt_save_dir, txt_filename)
+            
+            # 保存图片文件
+            image_filename = f"frame_{current_frame_index:06d}.jpg"
+            image_path = os.path.join(image_save_dir, image_filename)
+            
+            # 获取图像尺寸
+            h, w = self.current_frame_mat.shape[:2]
+            
+            # 保存图片
+            import cv2
+            cv2.imwrite(image_path, self.current_frame_mat)
+            
+            # 写入YOLO格式数据
+            with open(txt_path, 'w') as f:
+                for box in boxes:
+                    x1, y1, x2, y2, label = box
+                    
+                    # 转换为YOLO格式 (center_x, center_y, width, height) 归一化
+                    center_x = (x1 + x2) / 2.0 / w
+                    center_y = (y1 + y2) / 2.0 / h
+                    width = (x2 - x1) / w
+                    height = (y2 - y1) / h
+                    
+                    # 提取类别ID（假设所有检测都是同一类别，类别ID为0）
+                    class_id = 0
+                    
+                    # 写入YOLO格式行：class_id center_x center_y width height
+                    f.write(f"{class_id} {center_x:.6f} {center_y:.6f} {width:.6f} {height:.6f}\n")
+            
+            QMessageBox.information(self, "成功", f"预测结果已保存到视频文件夹:\n视频: {video_name}\n图片: {image_path}\n标注: {txt_path}\n检测到 {len(boxes)} 个目标")
+            
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"保存预测结果时出错: {str(e)}")
 
     def select_output_dir(self) -> None:
         """选择输出目录"""
         directory = QFileDialog.getExistingDirectory(self, "选择输出目录", "./")
         if directory:
-            self.output_dir_line_edit.setText(directory)
-            self.config["output_dir"] = directory
+            # 标准化路径
+            normalized_path = self.normalize_path(directory)
+            self.output_dir_line_edit.setText(normalized_path)
+            self.config["output_dir"] = normalized_path
             Utils.save_config(self.config)
             self.frame_controller.config = self.config
+            # 更新当前视频输出目录显示
+            self.update_current_video_path_display()
+    
     
     def select_model_file(self) -> None:
-        """选择YOLO模型文件"""
+        """选择YOLO模型文件（设置面板）"""
         file_path, _ = QFileDialog.getOpenFileName(
             self, "选择YOLO模型文件", "./", "PyTorch模型文件 (*.pt);;所有文件 (*)"
         )
         if file_path:
-            self.model_path_line_edit.setText(file_path)
-            self.config["model_path"] = file_path
+            # 标准化路径
+            normalized_path = self.normalize_path(file_path)
+            self.model_path_line_edit.setText(normalized_path)
+            self.config["model_path"] = normalized_path
             Utils.save_config(self.config)
             
             # 重新初始化自动标注器
-            self.auto_annotator = AutoAnnotator(file_path)
+            self.auto_annotator = AutoAnnotator(normalized_path)
             
             # 更新模型状态显示
-            if self.auto_annotator.is_available():
-                self.model_status_label.setText("模型状态: 已加载")
-                self.model_status_label.setStyleSheet("""
+            self.update_model_status()
+    
+    def select_model_file_annotate(self) -> None:
+        """选择YOLO模型文件（标注面板）"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "选择YOLO模型文件", "./", "PyTorch模型文件 (*.pt);;所有文件 (*)"
+        )
+        if file_path:
+            # 标准化路径
+            normalized_path = self.normalize_path(file_path)
+            self.model_path_line_edit.setText(normalized_path)
+            self.config["model_path"] = normalized_path
+            Utils.save_config(self.config)
+            
+            # 重新初始化自动标注器
+            self.auto_annotator = AutoAnnotator(normalized_path)
+            
+            # 更新模型状态显示
+            self.update_model_status_annotate()
+    
+    def toggle_prediction_switch(self, checked: bool) -> None:
+        """切换预测开关"""
+        if checked:
+            self.prediction_switch.setText("开启")
+            self.prediction_switch.setStyleSheet("""
+                QPushButton {
+                    background-color: #28a745;
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    padding: 6px 12px;
+                    font-size: 14px;
+                    font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+                }
+                QPushButton:hover {
+                    background-color: #218838;
+                }
+            """)
+        else:
+            self.prediction_switch.setText("关闭")
+            self.prediction_switch.setStyleSheet("""
+                QPushButton {
+                    background-color: #dc3545;
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    padding: 6px 12px;
+                    font-size: 14px;
+                    font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+                }
+                QPushButton:hover {
+                    background-color: #c82333;
+                }
+            """)
+        
+        # 保存预测开关状态
+        self.config["prediction_enabled"] = checked
+        Utils.save_config(self.config)
+    
+    def update_confidence_value(self, value: int) -> None:
+        """更新置信度值显示"""
+        self.confidence_value_label.setText(f"{value}%")
+        self.config["confidence_threshold"] = value / 100.0
+        Utils.save_config(self.config)
+    
+    def normalize_path(self, path: str) -> str:
+        """标准化路径格式，统一使用正斜杠"""
+        if not path:
+            return ""
+        # 将反斜杠转换为正斜杠，并处理重复的斜杠
+        normalized = path.replace("\\", "/")
+        # 处理重复的斜杠
+        while "//" in normalized:
+            normalized = normalized.replace("//", "/")
+        return normalized
+    
+    def get_current_video_output_dir(self) -> str:
+        """获取当前视频的输出目录"""
+        video_path = self.config.get("video_path", "")
+        if video_path:
+            video_name = os.path.splitext(os.path.basename(video_path))[0]
+        else:
+            video_name = "unknown_video"
+        
+        base_output_dir = self.config.get("output_dir", "./output")
+        return os.path.join(base_output_dir, video_name)
+    
+    def update_current_video_path_display(self) -> None:
+        """更新当前视频输出目录显示"""
+        if hasattr(self, 'current_video_path_label'):
+            video_path = self.config.get("video_path", "")
+            if video_path:
+                video_name = os.path.splitext(os.path.basename(video_path))[0]
+                base_output_dir = self.config.get("output_dir", "./output")
+                video_output_dir = os.path.join(base_output_dir, video_name)
+                
+                # 标准化路径显示
+                normalized_path = self.normalize_path(video_output_dir)
+                
+                # 显示完整的文件夹结构
+                display_text = f"{normalized_path}\n├── images/\n└── labels/"
+                self.current_video_path_label.setText(display_text)
+                self.current_video_path_label.setStyleSheet("""
                     QLabel { 
                         font-weight: normal; 
                         font-size: 14px;
                         font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
-                        color: #28a745;
+                        color: #2c3e50;
+                        background-color: #e8f5e8;
+                        border: 1px solid #28a745;
+                        border-radius: 4px;
+                        padding: 8px;
                         margin-top: 5px;
                     }
                 """)
             else:
-                self.model_status_label.setText("模型状态: 加载失败")
-                self.model_status_label.setStyleSheet("""
+                self.current_video_path_label.setText("未选择视频")
+                self.current_video_path_label.setStyleSheet("""
                     QLabel { 
                         font-weight: normal; 
                         font-size: 14px;
                         font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
-                        color: #dc3545;
+                        color: #6c757d;
+                        background-color: #f8f9fa;
+                        border: 1px solid #ddd;
+                        border-radius: 4px;
+                        padding: 8px;
                         margin-top: 5px;
                     }
                 """)
     
+    def refresh_prediction(self) -> None:
+        """刷新预测结果"""
+        # 检查是否在视频标注面板且当前帧不为空
+        if (self.function_panel.currentIndex() == 0 and self.current_frame_mat is not None):
+            # 清空当前标注框
+            if hasattr(self.image_label, 'clear_boxes'):
+                self.image_label.clear_boxes()
+            
+            # 如果预测开关开启，重新进行预测
+            if self.prediction_switch.isChecked():
+                confidence_threshold = self.config.get("confidence_threshold", 0.5)
+                boxes = self.auto_annotator.predict(self.current_frame_mat, confidence_threshold)
+                if boxes:
+                    self.image_label.load_boxes(boxes)
+                    print(f"刷新预测完成，检测到 {len(boxes)} 个目标")
+                else:
+                    print("刷新预测完成，未检测到目标")
+            else:
+                print("预测开关已关闭，跳过预测")
+        else:
+            print("当前不在视频标注面板或无可用帧")
+    
     def save_settings(self) -> None:
         """保存设置"""
-        # 更新配置
-        self.config["output_dir"] = self.output_dir_line_edit.text()
-        self.config["model_path"] = self.model_path_line_edit.text()
+        # 更新配置并标准化路径
+        self.config["output_dir"] = self.normalize_path(self.output_dir_line_edit.text())
+        self.config["model_path"] = self.normalize_path(self.model_path_line_edit.text())
         
         # 保存配置
         Utils.save_config(self.config)
@@ -328,7 +562,7 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, "成功", "设置已保存！")
     
     def update_model_status(self) -> None:
-        """更新模型状态显示"""
+        """更新模型状态显示（设置面板）"""
         if hasattr(self, 'model_status_label'):
             if self.auto_annotator.is_available():
                 self.model_status_label.setText("模型状态: 已加载")
@@ -352,25 +586,52 @@ class MainWindow(QMainWindow):
                         margin-top: 5px;
                     }
                 """)
+    
+    def update_model_status_annotate(self) -> None:
+        """更新模型状态显示（标注面板）"""
+        if hasattr(self, 'model_status_label'):
+            if self.auto_annotator.is_available():
+                self.model_status_label.setText("模型状态: 已加载")
+                self.model_status_label.setStyleSheet("""
+                    QLabel { 
+                        font-weight: normal; 
+                        font-size: 14px;
+                        font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+                        color: #28a745;
+                        margin-top: 5px;
+                    }
+                """)
+            else:
+                self.model_status_label.setText("模型状态: 加载失败")
+                self.model_status_label.setStyleSheet("""
+                    QLabel { 
+                        font-weight: normal; 
+                        font-size: 14px;
+                        font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+                        color: #dc3545;
+                        margin-top: 5px;
+                    }
+                """)
 
     # =============================
     # 其他逻辑保持不变
     # =============================
     def switch_function_panel(self, index: int) -> None:
         self.function_panel.setCurrentIndex(index)
-        buttons = [self.video_btn, self.annotate_tab_btn, self.settings_btn_top]
+        buttons = [self.video_annotate_btn, self.settings_btn_top]
         for i, btn in enumerate(buttons):
             btn.setStyleSheet(styles.get_top_button_style(selected=(i == index)))
         
         # 控制图像标注画布的编辑状态
         if hasattr(self, 'image_label') and isinstance(self.image_label, AnnotateCanvas):
-            if index == 1:  # 图像标注面板
+            if index == 0:  # 视频标注面板
                 self.image_label.set_edit_enabled(True)
                 self.image_label.set_draw_mode(self.new_box_btn.isChecked())
                 
-                # 切换到图像标注面板时，如果当前帧不为空，进行自动标注
-                if self.current_frame_mat is not None:
-                    boxes = self.auto_annotator.predict(self.current_frame_mat)
+                # 切换到视频标注面板时，如果当前帧不为空且预测开关开启，进行自动标注
+                if self.current_frame_mat is not None and self.prediction_switch.isChecked():
+                    confidence_threshold = self.config.get("confidence_threshold", 0.5)
+                    boxes = self.auto_annotator.predict(self.current_frame_mat, confidence_threshold)
                     if boxes:
                         self.image_label.load_boxes(boxes)
             else:  # 离开标注面板
@@ -448,9 +709,11 @@ class MainWindow(QMainWindow):
         self.image_label.set_image(pixmap)
         self.image_label.update()
         
-        # 如果在图像标注面板且当前帧不为空，进行自动标注
-        if self.function_panel.currentIndex() == 1 and self.current_frame_mat is not None:
-            boxes = self.auto_annotator.predict(self.current_frame_mat)
+        # 如果在视频标注面板且当前帧不为空且预测开关开启，进行自动标注
+        if (self.function_panel.currentIndex() == 0 and self.current_frame_mat is not None 
+            and self.prediction_switch.isChecked()):
+            confidence_threshold = self.config.get("confidence_threshold", 0.5)
+            boxes = self.auto_annotator.predict(self.current_frame_mat, confidence_threshold)
             if boxes:
                 self.image_label.load_boxes(boxes)
         

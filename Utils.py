@@ -71,10 +71,17 @@ def save_config(config: Dict[str, Any]) -> None:
         config: 配置字典
     """
     try:
+        # 确保配置目录存在
+        config_dir = os.path.dirname(CONFIG_FILE)
+        if config_dir and not os.path.exists(config_dir):
+            os.makedirs(config_dir, exist_ok=True)
+            
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=4, ensure_ascii=False)
     except IOError as e:
         print(f"配置文件保存错误: {e}")
+    except Exception as e:
+        print(f"保存配置文件时发生未知错误: {e}")
 
 
 def get_config_value(config: Dict[str, Any], key: str, default: Any = None) -> Any:

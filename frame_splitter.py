@@ -79,8 +79,15 @@ def extract_frames(config: Optional[Dict[str, Any]] = None,
                 if frame_count % frame_interval == 0:
                     filename = f"frame_{saved_count:06d}.jpg"
                     filepath = os.path.join(output_dir, filename)
-                    cv2.imwrite(filepath, frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
-                    saved_count += 1
+                    
+                    # 检查图像是否有效
+                    if frame is not None and frame.size > 0:
+                        success = cv2.imwrite(filepath, frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
+                        if success:
+                            saved_count += 1
+                        else:
+                            if verbose:
+                                print(f"警告: 无法保存帧 {filename}")
 
                     if progress_callback:
                         progress_callback(frame_count, total_frames)
@@ -97,7 +104,11 @@ def extract_frames(config: Optional[Dict[str, Any]] = None,
                 print(f"输出目录: {output_dir}")
             return True
         finally:
-            cap.release()
+            try:
+                cap.release()
+            except Exception as e:
+                if verbose:
+                    print(f"释放视频捕获对象时出错: {e}")
     except Exception as e:
         if verbose:
             print(f"帧提取过程中发生错误: {e}")
@@ -126,16 +137,21 @@ def read_frame_by_index(video_path: str, frame_index: int) -> Optional[Any]:
         print("错误: 无法打开视频文件")
         return None
 
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    index = max(0, min(frame_index, total_frames - 1))
-    cap.set(cv2.CAP_PROP_POS_FRAMES, index)
-    ret, frame = cap.read()
-    cap.release()
+    try:
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        index = max(0, min(frame_index, total_frames - 1))
+        cap.set(cv2.CAP_PROP_POS_FRAMES, index)
+        ret, frame = cap.read()
 
-    if not ret or frame is None:
-        print("警告: 无法读取指定帧")
-        return None
-    return frame
+        if not ret or frame is None:
+            print("警告: 无法读取指定帧")
+            return None
+        return frame
+    finally:
+        try:
+            cap.release()
+        except Exception as e:
+            print(f"释放视频捕获对象时出错: {e}")
 
 
 # ==============================

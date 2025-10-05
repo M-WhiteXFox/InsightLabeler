@@ -9,6 +9,7 @@ from typing import Dict
 # 定义颜色常量
 COLORS = {
     "primary": "#6c757d",
+    "secondary": "#6c757d",
     "hover": "#5a6268",
     "pressed": "#545b62",
     "selected": "#495057",
@@ -95,16 +96,19 @@ def get_button_style(size: str = "medium", color: str = COLORS["primary"]) -> st
     # 根据大小设置不同的样式
     if size == "small":
         padding = "8px 16px"
-        font_size = "16px"
+        font_size = "15px"
         min_width = "80px"
+        min_height = "35px"
     elif size == "large":
-        padding = "14px 28px"
-        font_size = "16px"
-        min_width = "140px"
+        padding = "12px 20px"
+        font_size = "18px"
+        min_width = "160px"
+        min_height = "45px"
     else:  # medium
-        padding = "12px 24px"
+        padding = "10px 18px"
         font_size = "16px"
-        min_width = "100px"
+        min_width = "120px"
+        min_height = "40px"
     
     return f"""
         QPushButton {{
@@ -116,10 +120,11 @@ def get_button_style(size: str = "medium", color: str = COLORS["primary"]) -> st
             text-decoration: none;
             font-size: {font_size};
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
-            font-weight: normal;
+            font-weight: bold;
             margin: 4px 2px;
             border-radius: 8px;
             min-width: {min_width};
+            min-height: {min_height};
         }}
         QPushButton:hover {{
             background-color: {COLORS["hover"]};

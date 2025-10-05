@@ -29,6 +29,10 @@ class FrameController(QObject):
         self.total_frames: int = 0
         self.last_frame_mat = None  # 缓存最近一次 read_frame 发出的帧（ndarray）
 
+    def __del__(self):
+        """析构函数，确保资源正确释放"""
+        self.close_video()
+
     # ----------------------------
     # 基础配置
     # ----------------------------
@@ -103,12 +107,16 @@ class FrameController(QObject):
 
     def close_video(self) -> None:
         """关闭视频预览"""
-        if self.video_cap:
-            self.video_cap.release()
-            self.video_cap = None
-        self.total_frames = 0
-        self.current_frame_index = 0
-        self.last_frame_mat = None
+        try:
+            if self.video_cap:
+                self.video_cap.release()
+                self.video_cap = None
+        except Exception as e:
+            print(f"关闭视频时出错: {e}")
+        finally:
+            self.total_frames = 0
+            self.current_frame_index = 0
+            self.last_frame_mat = None
 
     def _emit_frame_from_mat(self, mat, index: int):
         """直接发送内存图像数据（无需写入磁盘）"""
