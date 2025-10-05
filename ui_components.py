@@ -90,7 +90,7 @@ def create_image_display_area(parent_layout: QHBoxLayout, image_label: QLabel) -
     title_label = QLabel("图片预览")
     title_label.setStyleSheet("""
         QLabel {
-            font-size: 18px;
+            font-size: 20px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
             font-weight: bold;
             color: #2c3e50;
@@ -116,7 +116,7 @@ def create_image_display_area(parent_layout: QHBoxLayout, image_label: QLabel) -
             border-radius: 6px;
             padding: 25px;
             color: #6c757d;
-            font-size: 16px;
+            font-size: 20px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
         }
     """)
@@ -155,7 +155,7 @@ def create_video_panel(config: dict, select_file_handler: callable,
     video_group.setStyleSheet("""
         QGroupBox {
             font-weight: bold;
-            font-size: 18px;
+            font-size: 20px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
             color: #2c3e50;
             padding-top: 25px;
@@ -178,7 +178,7 @@ def create_video_panel(config: dict, select_file_handler: callable,
     video_label.setStyleSheet("""
         QLabel { 
             font-weight: normal; 
-            font-size: 16px;
+            font-size: 20px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
         }
     """)
@@ -188,7 +188,7 @@ def create_video_panel(config: dict, select_file_handler: callable,
         video_line_edit.setPlaceholderText("请选择视频文件")
     video_line_edit.setStyleSheet("""
         QLineEdit { 
-            font-size: 16px;
+            font-size: 20px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
             padding: 8px;
         }
@@ -208,7 +208,7 @@ def create_video_panel(config: dict, select_file_handler: callable,
     params_group.setStyleSheet("""
         QGroupBox {
             font-weight: bold;
-            font-size: 18px;
+            font-size: 20px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
             color: #2c3e50;
             padding-top: 20px;
@@ -232,7 +232,7 @@ def create_video_panel(config: dict, select_file_handler: callable,
     interval_label.setStyleSheet("""
         QLabel { 
             font-weight: normal; 
-            font-size: 16px;
+            font-size: 20px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
         }
     """)
@@ -242,7 +242,7 @@ def create_video_panel(config: dict, select_file_handler: callable,
     interval_spinbox.setValue(config.get("frame_interval", 1))
     interval_spinbox.setStyleSheet("""
         QSpinBox { 
-            font-size: 16px;
+            font-size: 20px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
             padding: 6px;
         }
@@ -259,7 +259,7 @@ def create_video_panel(config: dict, select_file_handler: callable,
     max_frames_label.setStyleSheet("""
         QLabel { 
             font-weight: normal; 
-            font-size: 16px;
+            font-size: 20px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
         }
     """)
@@ -270,7 +270,7 @@ def create_video_panel(config: dict, select_file_handler: callable,
     max_frames_spinbox.setSpecialValueText("无限制")
     max_frames_spinbox.setStyleSheet("""
         QSpinBox { 
-            font-size: 16px;
+            font-size: 20px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
             padding: 4px;
         }
@@ -295,7 +295,7 @@ def create_video_panel(config: dict, select_file_handler: callable,
     nav_group.setStyleSheet("""
         QGroupBox {
             font-weight: bold;
-            font-size: 18px;
+            font-size: 20px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
             color: #2c3e50;
             padding-top: 20px;
@@ -328,7 +328,7 @@ def create_video_panel(config: dict, select_file_handler: callable,
     goto_label.setStyleSheet("""
         QLabel { 
             font-weight: normal; 
-            font-size: 16px;
+            font-size: 20px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
         }
     """)
@@ -338,7 +338,7 @@ def create_video_panel(config: dict, select_file_handler: callable,
     frame_spinbox.setValue(0)
     frame_spinbox.setStyleSheet("""
         QSpinBox { 
-            font-size: 16px;
+            font-size: 20px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
             padding: 4px;
         }
@@ -354,7 +354,7 @@ def create_video_panel(config: dict, select_file_handler: callable,
     frame_info_label.setStyleSheet("""
         QLabel { 
             font-weight: normal; 
-            font-size: 16px;
+            font-size: 20px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
         }
     """)
@@ -677,19 +677,38 @@ def create_video_annotate_panel(config: dict, select_file_handler: callable,
             padding: 4px;
         }
     """)
+    # 设置最大值按钮
+    max_frames_set_btn = create_button("设为视频帧数", styles.COLORS["secondary"], "small")
+    max_frames_set_btn.setStyleSheet(styles.get_button_style("small", styles.COLORS["secondary"]) + """
+        QPushButton {
+            font-size: 16px;
+            font-weight: bold;
+            min-height: 30px;
+            min-width: 100px;
+        }
+    """)
+    
     max_frames_layout.addWidget(max_frames_label)
     max_frames_layout.addWidget(max_frames_spinbox)
+    max_frames_layout.addWidget(max_frames_set_btn)
     max_frames_layout.addStretch()
     params_layout.addLayout(max_frames_layout)
     
-    params_layout.addStretch()
-    layout.addWidget(params_group)
-    
-    # 操作按钮
-    extract_btn = create_button("提取帧", styles.COLORS["primary"], "large")
+    # 提取帧按钮 - 添加到参数组中
+    extract_btn = create_button("提取帧", styles.COLORS["primary"], "medium")
+    extract_btn.setStyleSheet(styles.get_button_style("medium", styles.COLORS["primary"]) + """
+        QPushButton {
+            font-size: 16px;
+            font-weight: bold;
+            min-height: 35px;
+        }
+    """)
     extract_btn.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
     extract_btn.clicked.connect(extract_frames_handler)
-    layout.addWidget(extract_btn)
+    params_layout.addWidget(extract_btn)
+    
+    params_layout.addStretch()
+    layout.addWidget(params_group)
     
     # 帧导航组
     nav_group = QGroupBox("帧导航")
@@ -1058,7 +1077,7 @@ def create_video_annotate_panel(config: dict, select_file_handler: callable,
     main_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
     
     # 返回主面板和相关控件
-    return main_panel, video_line_edit, interval_spinbox, max_frames_spinbox, extract_btn, prev_frame_btn, next_frame_btn, frame_spinbox, goto_btn, frame_info_label, save_prediction_btn, progress_slider, new_box_btn, refresh_btn, model_path_line_edit, model_browse_btn, model_status_label, prediction_switch, confidence_slider, confidence_value_label
+    return main_panel, video_line_edit, interval_spinbox, max_frames_spinbox, max_frames_set_btn, extract_btn, prev_frame_btn, next_frame_btn, frame_spinbox, goto_btn, frame_info_label, save_prediction_btn, progress_slider, new_box_btn, refresh_btn, model_path_line_edit, model_browse_btn, model_status_label, prediction_switch, confidence_slider, confidence_value_label
 
 
 def create_settings_panel(config: dict) -> Tuple:

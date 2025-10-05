@@ -96,13 +96,13 @@ def get_button_style(size: str = "medium", color: str = COLORS["primary"]) -> st
     # 根据大小设置不同的样式
     if size == "small":
         padding = "8px 16px"
-        font_size = "15px"
+        font_size = "20px"
         min_width = "80px"
         min_height = "35px"
     elif size == "large":
         padding = "12px 20px"
-        font_size = "18px"
-        min_width = "160px"
+        font_size = "20px"
+        min_width = "40px"
         min_height = "45px"
     else:  # medium
         padding = "10px 18px"

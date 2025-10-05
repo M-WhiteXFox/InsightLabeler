@@ -163,7 +163,7 @@ class MainWindow(QMainWindow):
             self.extract_frames_handler
         )
         self.video_annotate_panel = video_annotate_panel_data[0]
-        (self.video_line_edit, self.interval_spinbox, self.max_frames_spinbox,
+        (self.video_line_edit, self.interval_spinbox, self.max_frames_spinbox, self.max_frames_set_btn,
          self.extract_btn, self.prev_frame_btn, self.next_frame_btn,
          self.frame_spinbox, self.goto_btn, self.frame_info_label, 
          self.save_prediction_btn, self.progress_slider, self.new_box_btn, self.refresh_btn,
@@ -174,6 +174,7 @@ class MainWindow(QMainWindow):
         self.prev_frame_btn.clicked.connect(self.previous_frame)
         self.next_frame_btn.clicked.connect(self.next_frame)
         self.goto_btn.clicked.connect(self.goto_frame)
+        self.max_frames_set_btn.clicked.connect(self.set_max_frames_limit)
         self.save_prediction_btn.clicked.connect(self.save_prediction_results)
         self.progress_slider.sliderPressed.connect(self.on_progress_pressed)
         self.progress_slider.sliderReleased.connect(self.on_progress_released)
@@ -253,6 +254,8 @@ class MainWindow(QMainWindow):
                     self.frame_controller.read_frame(0)
                     # 更新当前视频输出目录显示
                     self.update_current_video_path_display()
+                    # 自动设置最大帧数为视频总帧数
+                    self.auto_set_max_frames()
                 except Exception as e:
                     QMessageBox.warning(self, "错误", str(e))
 
@@ -497,6 +500,73 @@ class MainWindow(QMainWindow):
                         margin-top: 5px;
                     }
                 """)
+    
+    def set_max_frames_limit(self) -> None:
+        """设置最大帧数限制为当前视频的总帧数"""
+        # 检查是否有视频文件
+        video_path = self.config.get("video_path", "")
+        if not video_path:
+            QMessageBox.warning(self, "警告", "请先选择视频文件")
+            return
+        
+        try:
+            # 获取视频的总帧数
+            import cv2
+            cap = cv2.VideoCapture(video_path)
+            if not cap.isOpened():
+                QMessageBox.warning(self, "错误", "无法打开视频文件")
+                return
+            
+            # 获取视频的总帧数
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            cap.release()
+            
+            if total_frames <= 0:
+                QMessageBox.warning(self, "错误", "无法获取视频帧数信息")
+                return
+            
+            # 更新SpinBox的最大值
+            self.max_frames_spinbox.setMaximum(total_frames)
+            
+            # 设置当前值为视频总帧数
+            self.max_frames_spinbox.setValue(total_frames)
+            
+            # 显示成功消息
+            QMessageBox.information(
+                self, 
+                "设置成功", 
+                f"最大帧数限制已设置为当前视频的总帧数: {total_frames}"
+            )
+            
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"获取视频帧数时出错: {str(e)}")
+    
+    def auto_set_max_frames(self) -> None:
+        """自动设置最大帧数为当前视频的总帧数"""
+        try:
+            # 获取视频的总帧数
+            import cv2
+            video_path = self.config.get("video_path", "")
+            if not video_path:
+                return
+                
+            cap = cv2.VideoCapture(video_path)
+            if not cap.isOpened():
+                return
+            
+            # 获取视频的总帧数
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            cap.release()
+            
+            if total_frames > 0:
+                # 更新SpinBox的最大值
+                self.max_frames_spinbox.setMaximum(total_frames)
+                # 设置当前值为视频总帧数
+                self.max_frames_spinbox.setValue(total_frames)
+                print(f"自动设置最大帧数为: {total_frames}")
+                
+        except Exception as e:
+            print(f"自动设置最大帧数时出错: {str(e)}")
     
     def refresh_prediction(self) -> None:
         """刷新预测结果"""
