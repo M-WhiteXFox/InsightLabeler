@@ -21,6 +21,7 @@ import cv2
 
 from annotate_canvas import AnnotateCanvas
 from auto_annotator import AutoAnnotator
+from training_panel import TrainingPanel
 
 
 class MainWindow(QMainWindow):
@@ -44,7 +45,9 @@ class MainWindow(QMainWindow):
         # ====== UI组件引用 ======
         self.image_label: QLabel = None
         self.function_panel: QStackedWidget = None
-        self.video_line_edit: QLineEdit = None
+        self.file_line_edit: QLineEdit = None
+        self.video_mode_btn: QPushButton = None
+        self.folder_mode_btn: QPushButton = None
         self.interval_spinbox: QSpinBox = None
         self.max_frames_spinbox: QSpinBox = None
         self.extract_btn: QPushButton = None
@@ -59,7 +62,7 @@ class MainWindow(QMainWindow):
         self.current_frame_mat = None  # 缓存当前帧的numpy数组
 
         # ====== 窗口设置 ======
-        self.setWindowTitle("InsightLabeler - 智能视频标注工具")
+        self.setWindowTitle("InsightLabeler - 智能视频/图片标注工具")
         self.setMinimumSize(1200, 800)
         self.showMaximized()
         self.setStyleSheet(styles.get_main_style())
@@ -79,20 +82,39 @@ class MainWindow(QMainWindow):
         self.frame_controller.frame_loaded.connect(self.on_frame_loaded)
         self.frame_controller.extraction_finished.connect(self.on_extraction_finished)
 
-        # 优先检查是否有视频文件，如果有则进入预览模式
+        # 选中第一个按钮
+        self.switch_function_panel(0)
+
+        # 优先检查是否有视频文件或照片文件夹，如果有则进入相应模式
         video_path = self.config.get("video_path", "")
         if video_path and os.path.exists(video_path):
-            try:
-                self.frame_controller.open_video(video_path)
-                # 清空磁盘帧列表，强制进入预览模式
-                self.frame_controller.frame_files = []
-                # 读取首帧（从视频开头开始）
-                self.frame_controller.read_frame(0)
-            except Exception as e:
-                print(f"自动加载视频失败: {e}")
-                # 如果视频加载失败，回退到文件模式
-                if self.frame_controller.frame_files:
-                    self.frame_controller.load_frame(0)
+            # 检查是文件还是文件夹
+            if os.path.isfile(video_path):
+                # 视频文件模式
+                try:
+                    self.frame_controller.open_video(video_path)
+                    # 清空磁盘帧列表，强制进入预览模式
+                    self.frame_controller.frame_files = []
+                    # 读取首帧（从视频开头开始）
+                    self.frame_controller.read_frame(0)
+                except Exception as e:
+                    print(f"自动加载视频失败: {e}")
+                    # 如果视频加载失败，回退到文件模式
+                    if self.frame_controller.frame_files:
+                        self.frame_controller.load_frame(0)
+            elif os.path.isdir(video_path):
+                # 照片文件夹模式
+                try:
+                    self.frame_controller.open_image_folder(video_path)
+                    # 清空磁盘帧列表，强制进入文件夹模式
+                    self.frame_controller.frame_files = []
+                    # 读取首张图片
+                    self.frame_controller.load_image_from_folder(0)
+                except Exception as e:
+                    print(f"自动加载照片文件夹失败: {e}")
+                    # 如果文件夹加载失败，回退到文件模式
+                    if self.frame_controller.frame_files:
+                        self.frame_controller.load_frame(0)
         elif self.frame_controller.frame_files:
             # 没有视频文件时，使用磁盘帧文件
             self.frame_controller.load_frame(0)
@@ -121,12 +143,16 @@ class MainWindow(QMainWindow):
         button_layout = QHBoxLayout(button_bar)
         button_layout.setSpacing(15)
 
-        self.video_annotate_btn = ui_components.create_top_button("视频标注")
+        self.video_annotate_btn = ui_components.create_top_button("视频/图片标注")
         self.video_annotate_btn.clicked.connect(lambda: self.switch_function_panel(0))
         button_layout.addWidget(self.video_annotate_btn)
 
+        self.training_btn = ui_components.create_top_button("模型训练")
+        self.training_btn.clicked.connect(lambda: self.switch_function_panel(1))
+        button_layout.addWidget(self.training_btn)
+
         self.settings_btn_top = ui_components.create_top_button("设置")
-        self.settings_btn_top.clicked.connect(lambda: self.switch_function_panel(1))
+        self.settings_btn_top.clicked.connect(lambda: self.switch_function_panel(2))
         button_layout.addWidget(self.settings_btn_top)
 
         button_layout.addStretch()
@@ -163,7 +189,7 @@ class MainWindow(QMainWindow):
             self.extract_frames_handler
         )
         self.video_annotate_panel = video_annotate_panel_data[0]
-        (self.video_line_edit, self.interval_spinbox, self.max_frames_spinbox, self.max_frames_set_btn,
+        (self.file_line_edit, self.video_mode_btn, self.folder_mode_btn, self.interval_spinbox, self.max_frames_spinbox, self.max_frames_set_btn,
          self.extract_btn, self.prev_frame_btn, self.next_frame_btn,
          self.frame_spinbox, self.goto_btn, self.frame_info_label, 
          self.save_prediction_btn, self.progress_slider, self.new_box_btn, self.refresh_btn,
@@ -189,6 +215,10 @@ class MainWindow(QMainWindow):
         self.prediction_switch.toggled.connect(self.toggle_prediction_switch)
         self.confidence_slider.valueChanged.connect(self.update_confidence_value)
         
+        # 连接模式切换信号
+        self.video_mode_btn.clicked.connect(self.on_mode_changed)
+        self.folder_mode_btn.clicked.connect(self.on_mode_changed)
+        
         # 添加拖动状态标志
         self.is_slider_dragging = False
         # 添加防抖定时器
@@ -197,6 +227,10 @@ class MainWindow(QMainWindow):
         self.progress_timer.timeout.connect(self._jump_to_progress_frame)
 
         self.function_panel.addWidget(self.video_annotate_panel)
+
+        # 训练面板
+        self.training_panel = TrainingPanel(self.config)
+        self.function_panel.addWidget(self.training_panel)
 
         # 设置面板
         settings_panel_data = ui_components.create_settings_panel(self.config)
@@ -223,6 +257,9 @@ class MainWindow(QMainWindow):
         
         # 初始化当前视频输出目录显示
         self.update_current_video_path_display()
+        
+        # 初始化模式状态
+        self.on_mode_changed()
 
         self.function_panel.addWidget(self.settings_panel)
         parent_layout.addWidget(self.function_panel, stretch=1)
@@ -230,21 +267,51 @@ class MainWindow(QMainWindow):
     # =============================
     # 文件选择与事件响应
     # =============================
-    def select_file(self, line_edit: QLineEdit, key: str) -> None:
-        """选择视频文件"""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "选择文件", "./", "视频文件 (*.mp4 *.avi *.mov);;所有文件 (*)"
-        )
+    def select_file(self, line_edit: QLineEdit, key: str, video_mode_btn: QPushButton = None, folder_mode_btn: QPushButton = None) -> None:
+        """选择视频文件或照片文件夹"""
+        # 根据当前选择的模式决定文件选择类型
+        if folder_mode_btn and folder_mode_btn.isChecked():
+            # 照片文件夹模式
+            folder_path = QFileDialog.getExistingDirectory(
+                self, "选择照片文件夹", "./"
+            )
+            if folder_path:
+                # 标准化路径
+                normalized_path = self.normalize_path(folder_path)
+                line_edit.setText(normalized_path)
+                self.config[key] = normalized_path
+                Utils.save_config(self.config)
+                self.frame_controller.config = self.config
+                
+                try:
+                    # 打开照片文件夹进入"文件夹模式"
+                    self.frame_controller.open_image_folder(folder_path)
+                    # 清空磁盘帧列表，强制上下张/跳转走文件夹模式
+                    self.frame_controller.frame_files = []
+                    # 读取首张图片
+                    self.frame_controller.load_frame(0)
+                    # 更新当前视频输出目录显示
+                    self.update_current_video_path_display()
+                    # 自动设置最大帧数为文件夹中的图片数量
+                    self.auto_set_max_frames()
+                    # 更新模式状态
+                    self.on_mode_changed()
+                except Exception as e:
+                    QMessageBox.warning(self, "错误", str(e))
+        else:
+            # 视频文件模式
+            file_path, _ = QFileDialog.getOpenFileName(
+                self, "选择视频文件", "./", "视频文件 (*.mp4 *.avi *.mov);;所有文件 (*)"
+            )
 
-        if file_path:
-            # 标准化路径
-            normalized_path = self.normalize_path(file_path)
-            line_edit.setText(normalized_path)
-            self.config[key] = normalized_path
-            Utils.save_config(self.config)
-            self.frame_controller.config = self.config
+            if file_path:
+                # 标准化路径
+                normalized_path = self.normalize_path(file_path)
+                line_edit.setText(normalized_path)
+                self.config[key] = normalized_path
+                Utils.save_config(self.config)
+                self.frame_controller.config = self.config
 
-            if key == "video_path":
                 try:
                     # 打开视频进入"预览模式"
                     self.frame_controller.open_video(file_path)
@@ -256,45 +323,66 @@ class MainWindow(QMainWindow):
                     self.update_current_video_path_display()
                     # 自动设置最大帧数为视频总帧数
                     self.auto_set_max_frames()
+                    # 更新模式状态
+                    self.on_mode_changed()
                 except Exception as e:
                     QMessageBox.warning(self, "错误", str(e))
 
     def save_prediction_results(self):
-        """保存当前帧的YOLO模型预测结果"""
-        if not hasattr(self, 'current_frame_mat') or self.current_frame_mat is None:
-            QMessageBox.warning(self, "提示", "当前没有可用的帧数据")
-            return
-        
-        if not self.prediction_switch.isChecked():
-            QMessageBox.warning(self, "提示", "请先开启AI预测功能")
-            return
-        
-        if not self.auto_annotator.is_available():
-            QMessageBox.warning(self, "提示", "模型未加载，无法进行预测")
-            return
-        
+        """保存当前帧的标注框结果（包括AI预测和手动创建的标注框）"""
         try:
-            # 获取当前帧的预测结果
-            confidence_threshold = self.config.get("confidence_threshold", 0.5)
-            boxes = self.auto_annotator.predict(self.current_frame_mat, confidence_threshold)
+            # 获取当前帧数据
+            current_frame_mat = None
             
-            if not boxes:
-                QMessageBox.information(self, "提示", "当前帧未检测到任何目标")
+            # 照片文件夹模式：从当前图片文件读取
+            if hasattr(self.frame_controller, "is_image_folder_mode") and self.frame_controller.is_image_folder_mode():
+                if (hasattr(self.frame_controller, 'current_frame_index') and 
+                    hasattr(self.frame_controller, 'image_files') and 
+                    self.frame_controller.current_frame_index < len(self.frame_controller.image_files)):
+                    import cv2
+                    current_image_path = self.frame_controller.image_files[self.frame_controller.current_frame_index]
+                    current_frame_mat = cv2.imread(current_image_path)
+            # 视频模式：使用缓存的帧数据
+            elif hasattr(self, 'current_frame_mat') and self.current_frame_mat is not None:
+                current_frame_mat = self.current_frame_mat
+            
+            if current_frame_mat is None:
+                QMessageBox.warning(self, "提示", "当前没有可用的帧数据")
                 return
             
-            # 获取视频名称并创建文件夹结构
-            video_path = self.config.get("video_path", "")
-            if video_path:
-                # 从视频路径中提取文件名（不含扩展名）
-                video_name = os.path.splitext(os.path.basename(video_path))[0]
-            else:
-                video_name = "unknown_video"
+            # 获取画布上的所有标注框（包括手动创建的和AI预测的）
+            boxes = []
+            if hasattr(self.image_label, 'get_boxes'):
+                boxes = self.image_label.get_boxes()
             
-            # 创建基于视频名称的文件夹结构
+            # 如果没有标注框，尝试获取AI预测结果
+            if not boxes and self.prediction_switch.isChecked() and self.auto_annotator.is_available():
+                confidence_threshold = self.config.get("confidence_threshold", 0.5)
+                boxes = self.auto_annotator.predict(current_frame_mat, confidence_threshold)
+            
+            if not boxes:
+                QMessageBox.information(self, "提示", "当前帧没有任何标注框，请先创建标注框或开启AI预测功能")
+                return
+            
+            # 获取输出名称并创建文件夹结构
+            input_path = self.config.get("video_path", "")
+            if input_path:
+                if os.path.isfile(input_path):
+                    # 视频文件模式：从视频路径中提取文件名
+                    output_name = os.path.splitext(os.path.basename(input_path))[0]
+                elif os.path.isdir(input_path):
+                    # 照片文件夹模式：从文件夹路径中提取文件夹名
+                    output_name = os.path.basename(input_path.rstrip(os.sep))
+                else:
+                    output_name = "unknown_input"
+            else:
+                output_name = "unknown_input"
+            
+            # 创建基于输入名称的文件夹结构
             base_output_dir = self.config.get("output_dir", "./output")
-            video_output_dir = os.path.join(base_output_dir, video_name)
-            txt_save_dir = os.path.join(video_output_dir, "labels")
-            image_save_dir = os.path.join(video_output_dir, "images")
+            output_dir = os.path.join(base_output_dir, output_name)
+            txt_save_dir = os.path.join(output_dir, "labels")
+            image_save_dir = os.path.join(output_dir, "images")
             
             # 确保目录存在
             os.makedirs(txt_save_dir, exist_ok=True)
@@ -312,11 +400,11 @@ class MainWindow(QMainWindow):
             image_path = os.path.join(image_save_dir, image_filename)
             
             # 获取图像尺寸
-            h, w = self.current_frame_mat.shape[:2]
+            h, w = current_frame_mat.shape[:2]
             
             # 保存图片
             import cv2
-            cv2.imwrite(image_path, self.current_frame_mat)
+            cv2.imwrite(image_path, current_frame_mat)
             
             # 写入YOLO格式数据
             with open(txt_path, 'w') as f:
@@ -335,7 +423,7 @@ class MainWindow(QMainWindow):
                     # 写入YOLO格式行：class_id center_x center_y width height
                     f.write(f"{class_id} {center_x:.6f} {center_y:.6f} {width:.6f} {height:.6f}\n")
             
-            QMessageBox.information(self, "成功", f"预测结果已保存到视频文件夹:\n视频: {video_name}\n图片: {image_path}\n标注: {txt_path}\n检测到 {len(boxes)} 个目标")
+            QMessageBox.information(self, "成功", f"标注结果已保存到输出文件夹:\n输入: {output_name}\n图片: {image_path}\n标注: {txt_path}\n共保存 {len(boxes)} 个标注框")
             
         except Exception as e:
             QMessageBox.warning(self, "错误", f"保存预测结果时出错: {str(e)}")
@@ -435,6 +523,35 @@ class MainWindow(QMainWindow):
         self.config["confidence_threshold"] = value / 100.0
         Utils.save_config(self.config)
     
+    def on_mode_changed(self) -> None:
+        """处理模式切换事件"""
+        if self.folder_mode_btn.isChecked():
+            # 照片文件夹模式：禁用提取帧按钮
+            self.extract_btn.setEnabled(False)
+            self.extract_btn.setText("照片文件夹模式无需提取")
+            self.extract_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #6c757d;
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    padding: 8px 16px;
+                    font-size: 16px;
+                    font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+                }
+            """)
+        else:
+            # 视频文件模式：启用提取帧按钮
+            self.extract_btn.setEnabled(True)
+            self.extract_btn.setText("提取帧")
+            self.extract_btn.setStyleSheet(styles.get_button_style("medium", styles.COLORS["primary"]) + """
+                QPushButton {
+                    font-size: 16px;
+                    font-weight: bold;
+                    min-height: 35px;
+                }
+            """)
+    
     def normalize_path(self, path: str) -> str:
         """标准化路径格式，统一使用正斜杠"""
         if not path:
@@ -502,11 +619,36 @@ class MainWindow(QMainWindow):
                 """)
     
     def set_max_frames_limit(self) -> None:
-        """设置最大帧数限制为当前视频的总帧数"""
+        """设置最大帧数限制为当前视频的总帧数或照片文件夹中的图片数量"""
+        # 检查照片文件夹模式
+        if hasattr(self.frame_controller, "is_image_folder_mode") and self.frame_controller.is_image_folder_mode():
+            try:
+                total_frames = self.frame_controller.total_frames
+                if total_frames <= 0:
+                    QMessageBox.warning(self, "错误", "无法获取图片数量信息")
+                    return
+                
+                # 更新SpinBox的最大值
+                self.max_frames_spinbox.setMaximum(total_frames)
+                
+                # 设置当前值为图片总数
+                self.max_frames_spinbox.setValue(total_frames)
+                
+                # 显示成功消息
+                QMessageBox.information(
+                    self, 
+                    "设置成功", 
+                    f"最大图片数限制已设置为照片文件夹中的图片数量: {total_frames}"
+                )
+                return
+            except Exception as e:
+                QMessageBox.warning(self, "错误", f"获取图片数量时出错: {str(e)}")
+                return
+        
         # 检查是否有视频文件
         video_path = self.config.get("video_path", "")
         if not video_path:
-            QMessageBox.warning(self, "警告", "请先选择视频文件")
+            QMessageBox.warning(self, "警告", "请先选择视频文件或照片文件夹")
             return
         
         try:
@@ -542,9 +684,20 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "错误", f"获取视频帧数时出错: {str(e)}")
     
     def auto_set_max_frames(self) -> None:
-        """自动设置最大帧数为当前视频的总帧数"""
+        """自动设置最大帧数为当前视频的总帧数或照片文件夹中的图片数量"""
         try:
-            # 获取视频的总帧数
+            # 照片文件夹模式
+            if hasattr(self.frame_controller, "is_image_folder_mode") and self.frame_controller.is_image_folder_mode():
+                total_frames = self.frame_controller.total_frames
+                if total_frames > 0:
+                    # 更新SpinBox的最大值
+                    self.max_frames_spinbox.setMaximum(total_frames)
+                    # 设置当前值为图片总数
+                    self.max_frames_spinbox.setValue(total_frames)
+                    print(f"自动设置最大帧数为照片文件夹中的图片数量: {total_frames}")
+                return
+            
+            # 视频模式
             import cv2
             video_path = self.config.get("video_path", "")
             if not video_path:
@@ -688,7 +841,7 @@ class MainWindow(QMainWindow):
     # =============================
     def switch_function_panel(self, index: int) -> None:
         self.function_panel.setCurrentIndex(index)
-        buttons = [self.video_annotate_btn, self.settings_btn_top]
+        buttons = [self.video_annotate_btn, self.training_btn, self.settings_btn_top]
         for i, btn in enumerate(buttons):
             btn.setStyleSheet(styles.get_top_button_style(selected=(i == index)))
         
@@ -729,24 +882,33 @@ class MainWindow(QMainWindow):
 
     def goto_frame(self) -> None:
         target_index = self.frame_spinbox.value()
-        # 预览优先：有 VideoCapture 就直接读视频帧
-        if hasattr(self.frame_controller, "is_preview_mode") and self.frame_controller.is_preview_mode():
+        # 照片文件夹模式优先
+        if hasattr(self.frame_controller, "is_image_folder_mode") and self.frame_controller.is_image_folder_mode():
+            self.frame_controller.goto_image_from_folder(target_index)
+        # 预览模式：有 VideoCapture 就直接读视频帧
+        elif hasattr(self.frame_controller, "is_preview_mode") and self.frame_controller.is_preview_mode():
             self.frame_controller.read_frame(target_index)
         elif self.frame_controller.frame_files:
             self.frame_controller.goto_frame(target_index)
 
     def previous_frame(self) -> None:
         interval = self.interval_spinbox.value()
-        # 预览优先
-        if hasattr(self.frame_controller, "is_preview_mode") and self.frame_controller.is_preview_mode():
+        # 照片文件夹模式优先
+        if hasattr(self.frame_controller, "is_image_folder_mode") and self.frame_controller.is_image_folder_mode():
+            self.frame_controller.previous_image_from_folder(interval)
+        # 预览模式
+        elif hasattr(self.frame_controller, "is_preview_mode") and self.frame_controller.is_preview_mode():
             self.frame_controller.previous_frame_preview(interval)
         elif self.frame_controller.frame_files:
             self.frame_controller.previous_frame(interval)
 
     def next_frame(self) -> None:
         interval = self.interval_spinbox.value()
-        # 预览优先
-        if hasattr(self.frame_controller, "is_preview_mode") and self.frame_controller.is_preview_mode():
+        # 照片文件夹模式优先
+        if hasattr(self.frame_controller, "is_image_folder_mode") and self.frame_controller.is_image_folder_mode():
+            self.frame_controller.next_image_from_folder(interval)
+        # 预览模式
+        elif hasattr(self.frame_controller, "is_preview_mode") and self.frame_controller.is_preview_mode():
             self.frame_controller.next_frame_preview(interval)
         elif self.frame_controller.frame_files:
             self.frame_controller.next_frame(interval)
@@ -805,10 +967,16 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'frame_info_label'):
             try:
                 if hasattr(self.frame_controller, 'total_frames') and self.frame_controller.total_frames > 0:
+                    # 照片文件夹模式优先
+                    if hasattr(self.frame_controller, "is_image_folder_mode") and self.frame_controller.is_image_folder_mode():
+                        current = self.frame_controller.current_frame_index
+                        total = self.frame_controller.total_frames
+                        self.frame_info_label.setText(f"图片：{current} / {total}")
                     # 预览模式
-                    current = self.frame_controller.current_frame_index
-                    total = self.frame_controller.total_frames
-                    self.frame_info_label.setText(f"帧：{current} / {total}")
+                    else:
+                        current = self.frame_controller.current_frame_index
+                        total = self.frame_controller.total_frames
+                        self.frame_info_label.setText(f"帧：{current} / {total}")
                     
                     # 更新进度条
                     if hasattr(self, 'progress_slider') and total > 0:
@@ -872,13 +1040,22 @@ class MainWindow(QMainWindow):
         try:
             value = self.progress_slider.value()
             if hasattr(self.frame_controller, 'total_frames') and self.frame_controller.total_frames > 0:
+                # 照片文件夹模式优先
+                if hasattr(self.frame_controller, "is_image_folder_mode") and self.frame_controller.is_image_folder_mode():
+                    target_frame = int((value / 1000) * self.frame_controller.total_frames)
+                    target_frame = max(0, min(target_frame, self.frame_controller.total_frames - 1))
+                    # 临时禁用进度条更新，避免循环更新
+                    self.progress_slider.blockSignals(True)
+                    self.frame_controller.goto_image_from_folder(target_frame)
+                    self.progress_slider.blockSignals(False)
                 # 预览模式
-                target_frame = int((value / 1000) * self.frame_controller.total_frames)
-                target_frame = max(0, min(target_frame, self.frame_controller.total_frames - 1))
-                # 临时禁用进度条更新，避免循环更新
-                self.progress_slider.blockSignals(True)
-                self.frame_controller.read_frame(target_frame)
-                self.progress_slider.blockSignals(False)
+                else:
+                    target_frame = int((value / 1000) * self.frame_controller.total_frames)
+                    target_frame = max(0, min(target_frame, self.frame_controller.total_frames - 1))
+                    # 临时禁用进度条更新，避免循环更新
+                    self.progress_slider.blockSignals(True)
+                    self.frame_controller.read_frame(target_frame)
+                    self.progress_slider.blockSignals(False)
             elif hasattr(self.frame_controller, 'frame_files') and self.frame_controller.frame_files:
                 # 文件模式
                 target_frame = int((value / 1000) * len(self.frame_controller.frame_files))

@@ -108,7 +108,7 @@ def create_image_display_area(parent_layout: QHBoxLayout, image_label: QLabel) -
     image_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
     
     # 设置无图片时的提示和样式
-    image_label.setText("暂无图片\n请选择视频并提取帧")
+    image_label.setText("暂无图片\n请选择视频文件或照片文件夹")
     image_label.setStyleSheet("""
         QLabel {
             background-color: #f8f9fa;
@@ -530,7 +530,7 @@ def create_video_annotate_panel(config: dict, select_file_handler: callable,
     layout.setContentsMargins(15, 15, 15, 15)
     
     # 标题
-    title_label = QLabel("视频处理与图像标注")
+    title_label = QLabel("视频/图片处理与图像标注")
     title_label.setStyleSheet("""
         QLabel {
             font-size: 20px;
@@ -543,7 +543,7 @@ def create_video_annotate_panel(config: dict, select_file_handler: callable,
     layout.addWidget(title_label)
     
     # 描述
-    desc_label = QLabel("在此面板中可以处理视频并进行图像标注")
+    desc_label = QLabel("在此面板中可以处理视频或照片文件夹并进行图像标注")
     desc_label.setStyleSheet("""
         QLabel {
             font-size: 16px;
@@ -554,9 +554,9 @@ def create_video_annotate_panel(config: dict, select_file_handler: callable,
     """)
     layout.addWidget(desc_label)
     
-    # 视频文件选择组
-    video_group = QGroupBox("视频文件")
-    video_group.setStyleSheet("""
+    # 输入源选择组
+    input_group = QGroupBox("输入源")
+    input_group.setStyleSheet("""
         QGroupBox {
             font-weight: bold;
             font-size: 18px;
@@ -570,26 +570,78 @@ def create_video_annotate_panel(config: dict, select_file_handler: callable,
             padding: 6px 12px;
         }
     """)
-    video_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+    input_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
     
-    video_layout = QVBoxLayout(video_group)
-    video_layout.setSpacing(12)
+    input_layout = QVBoxLayout(input_group)
+    input_layout.setSpacing(12)
     
-    folder_choose = QHBoxLayout()
-    folder_choose.setSpacing(8)
-    video_label = QLabel("视频文件:")
-    video_label.setStyleSheet("""
+    # 输入模式选择
+    mode_layout = QHBoxLayout()
+    mode_layout.setSpacing(8)
+    mode_label = QLabel("输入模式:")
+    mode_label.setStyleSheet("""
         QLabel { 
             font-weight: normal; 
             font-size: 16px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
         }
     """)
-    video_line_edit = QLineEdit()
-    video_line_edit.setText(config.get("video_path", ""))
-    if not video_line_edit.text():
-        video_line_edit.setPlaceholderText("请选择视频文件")
-    video_line_edit.setStyleSheet("""
+    
+    # 模式选择按钮组
+    mode_buttons_layout = QHBoxLayout()
+    mode_buttons_layout.setSpacing(4)
+    
+    video_mode_btn = create_button("视频文件", styles.COLORS["primary"], "small", checkable=True)
+    video_mode_btn.setChecked(True)  # 默认选择视频模式
+    video_mode_btn.setStyleSheet(styles.get_button_style("small", styles.COLORS["primary"]) + """
+        QPushButton:checked {
+            background-color: #28a745;
+            border: 2px solid #1e7e34;
+        }
+        QPushButton:checked:hover {
+            background-color: #218838;
+        }
+    """)
+    
+    folder_mode_btn = create_button("照片文件夹", styles.COLORS["secondary"], "small", checkable=True)
+    folder_mode_btn.setStyleSheet(styles.get_button_style("small", styles.COLORS["secondary"]) + """
+        QPushButton:checked {
+            background-color: #28a745;
+            border: 2px solid #1e7e34;
+        }
+        QPushButton:checked:hover {
+            background-color: #218838;
+        }
+    """)
+    
+    # 互斥选择
+    video_mode_btn.clicked.connect(lambda: folder_mode_btn.setChecked(False) if video_mode_btn.isChecked() else None)
+    folder_mode_btn.clicked.connect(lambda: video_mode_btn.setChecked(False) if folder_mode_btn.isChecked() else None)
+    
+    mode_buttons_layout.addWidget(video_mode_btn)
+    mode_buttons_layout.addWidget(folder_mode_btn)
+    mode_buttons_layout.addStretch()
+    
+    mode_layout.addWidget(mode_label)
+    mode_layout.addLayout(mode_buttons_layout)
+    input_layout.addLayout(mode_layout)
+    
+    # 文件/文件夹选择
+    file_choose = QHBoxLayout()
+    file_choose.setSpacing(8)
+    file_label = QLabel("文件路径:")
+    file_label.setStyleSheet("""
+        QLabel { 
+            font-weight: normal; 
+            font-size: 16px;
+            font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+        }
+    """)
+    file_line_edit = QLineEdit()
+    file_line_edit.setText(config.get("video_path", ""))
+    if not file_line_edit.text():
+        file_line_edit.setPlaceholderText("请选择视频文件或照片文件夹")
+    file_line_edit.setStyleSheet("""
         QLineEdit { 
             font-size: 16px;
             font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
@@ -598,16 +650,16 @@ def create_video_annotate_panel(config: dict, select_file_handler: callable,
     """)
     
     browse_btn = create_button("浏览", styles.COLORS["primary"], "small")
-    browse_btn.clicked.connect(partial(select_file_handler, video_line_edit, "video_path"))
+    browse_btn.clicked.connect(partial(select_file_handler, file_line_edit, "video_path", video_mode_btn, folder_mode_btn))
     
-    folder_choose.addWidget(video_label)
-    folder_choose.addWidget(video_line_edit)
-    folder_choose.addWidget(browse_btn)
-    video_layout.addLayout(folder_choose)
-    layout.addWidget(video_group)
+    file_choose.addWidget(file_label)
+    file_choose.addWidget(file_line_edit)
+    file_choose.addWidget(browse_btn)
+    input_layout.addLayout(file_choose)
+    layout.addWidget(input_group)
     
-    # 帧提取参数组
-    params_group = QGroupBox("提取参数")
+    # 处理参数组
+    params_group = QGroupBox("处理参数")
     params_group.setStyleSheet("""
         QGroupBox {
             font-weight: bold;
@@ -627,10 +679,10 @@ def create_video_annotate_panel(config: dict, select_file_handler: callable,
     params_layout = QVBoxLayout(params_group)
     params_layout.setSpacing(10)
     
-    # 帧间隔
+    # 图片间隔
     interval_layout = QHBoxLayout()
     interval_layout.setSpacing(8)
-    interval_label = QLabel("帧间隔:")
+    interval_label = QLabel("图片间隔:")
     interval_label.setStyleSheet("""
         QLabel { 
             font-weight: normal; 
@@ -654,10 +706,10 @@ def create_video_annotate_panel(config: dict, select_file_handler: callable,
     interval_layout.addStretch()
     params_layout.addLayout(interval_layout)
     
-    # 最大帧数
+    # 最大图片数
     max_frames_layout = QHBoxLayout()
     max_frames_layout.setSpacing(8)
-    max_frames_label = QLabel("最大帧数:")
+    max_frames_label = QLabel("最大图片数:")
     max_frames_label.setStyleSheet("""
         QLabel { 
             font-weight: normal; 
@@ -678,7 +730,7 @@ def create_video_annotate_panel(config: dict, select_file_handler: callable,
         }
     """)
     # 设置最大值按钮
-    max_frames_set_btn = create_button("设为视频帧数", styles.COLORS["secondary"], "small")
+    max_frames_set_btn = create_button("设为总数", styles.COLORS["secondary"], "small")
     max_frames_set_btn.setStyleSheet(styles.get_button_style("small", styles.COLORS["secondary"]) + """
         QPushButton {
             font-size: 16px;
@@ -711,7 +763,7 @@ def create_video_annotate_panel(config: dict, select_file_handler: callable,
     layout.addWidget(params_group)
     
     # 帧导航组
-    nav_group = QGroupBox("帧导航")
+    nav_group = QGroupBox("图片导航")
     nav_group.setStyleSheet("""
         QGroupBox {
             font-weight: bold;
@@ -740,10 +792,10 @@ def create_video_annotate_panel(config: dict, select_file_handler: callable,
     nav_buttons_layout.addWidget(next_frame_btn)
     nav_layout.addLayout(nav_buttons_layout)
     
-    # 帧跳转
+    # 图片跳转
     goto_layout = QHBoxLayout()
     goto_layout.setSpacing(8)
-    goto_label = QLabel("跳转到帧:")
+    goto_label = QLabel("跳转到:")
     goto_label.setStyleSheet("""
         QLabel { 
             font-weight: normal; 
@@ -768,8 +820,8 @@ def create_video_annotate_panel(config: dict, select_file_handler: callable,
     goto_layout.addWidget(goto_btn)
     nav_layout.addLayout(goto_layout)
     
-    # 帧信息标签
-    frame_info_label = QLabel("帧：- / -")
+    # 图片信息标签
+    frame_info_label = QLabel("图片：- / -")
     frame_info_label.setStyleSheet("""
         QLabel { 
             font-weight: normal; 
@@ -1032,8 +1084,8 @@ def create_video_annotate_panel(config: dict, select_file_handler: callable,
     refresh_btn.setMinimumHeight(40)
     buttons_layout.addWidget(refresh_btn)
     
-    # 保存预测结果按钮
-    save_prediction_btn = create_button("保存预测结果", styles.COLORS["primary"], "medium")
+    # 保存标注结果按钮
+    save_prediction_btn = create_button("保存标注结果", styles.COLORS["primary"], "medium")
     save_prediction_btn.setStyleSheet(styles.get_button_style("medium", styles.COLORS["primary"]) + """
         QPushButton {
             font-size: 16px;
@@ -1048,7 +1100,7 @@ def create_video_annotate_panel(config: dict, select_file_handler: callable,
     tools_layout.addLayout(buttons_layout)
     
     # 标注说明
-    annotate_desc = QLabel("在图像上绘制标注框，支持拖拽、调整大小、删除等操作。修改模型参数后点击'刷新预测'重新应用。")
+    annotate_desc = QLabel("在图像上绘制标注框，支持拖拽、调整大小、删除等操作。修改模型参数后点击'刷新预测'重新应用。点击'保存标注结果'保存当前所有标注框。")
     annotate_desc.setStyleSheet("""
         QLabel {
             font-size: 14px;
@@ -1077,7 +1129,7 @@ def create_video_annotate_panel(config: dict, select_file_handler: callable,
     main_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
     
     # 返回主面板和相关控件
-    return main_panel, video_line_edit, interval_spinbox, max_frames_spinbox, max_frames_set_btn, extract_btn, prev_frame_btn, next_frame_btn, frame_spinbox, goto_btn, frame_info_label, save_prediction_btn, progress_slider, new_box_btn, refresh_btn, model_path_line_edit, model_browse_btn, model_status_label, prediction_switch, confidence_slider, confidence_value_label
+    return main_panel, file_line_edit, video_mode_btn, folder_mode_btn, interval_spinbox, max_frames_spinbox, max_frames_set_btn, extract_btn, prev_frame_btn, next_frame_btn, frame_spinbox, goto_btn, frame_info_label, save_prediction_btn, progress_slider, new_box_btn, refresh_btn, model_path_line_edit, model_browse_btn, model_status_label, prediction_switch, confidence_slider, confidence_value_label
 
 
 def create_settings_panel(config: dict) -> Tuple:
