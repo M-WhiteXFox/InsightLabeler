@@ -68,7 +68,15 @@ class AutoAnnotator:
             检测结果列表，格式为 [(x1, y1, x2, y2, label), ...]
             如果模型未加载或检测失败，返回空列表
         """
+        print(f"=== AutoAnnotator.predict 开始 ===")
+        print(f"模型状态: {self.model is not None}")
+        print(f"输入帧形状: {frame.shape if frame is not None else 'None'}")
+        print(f"置信度阈值: {confidence_threshold}")
+        print(f"类别数量: {len(self.class_names)}")
+        print(f"类别名称: {self.class_names}")
+        
         if self.model is None:
+            print("模型未加载，返回空结果")
             return []
         
         if frame is None or frame.size == 0:
@@ -77,10 +85,14 @@ class AutoAnnotator:
         
         try:
             # 使用YOLO模型进行预测
+            print("正在执行YOLO预测...")
             results = self.model(frame)
+            print(f"YOLO预测完成，结果数量: {len(results)}")
             
             boxes = []
-            for result in results:
+            for idx, result in enumerate(results):
+                print(f"处理结果 {idx}: boxes={result.boxes is not None}, boxes数量={len(result.boxes) if result.boxes is not None else 0}")
+                
                 # 获取边界框和类别信息
                 if result.boxes is not None and len(result.boxes) > 0:
                     for i in range(len(result.boxes)):
@@ -92,6 +104,8 @@ class AutoAnnotator:
                             # 获取类别ID和置信度
                             cls_id = int(result.boxes.cls[i].cpu().numpy())
                             conf = float(result.boxes.conf[i].cpu().numpy())
+                            
+                            print(f"  检测框 {i}: cls_id={cls_id}, conf={conf:.3f}, box=({x1:.1f}, {y1:.1f}, {x2:.1f}, {y2:.1f})")
                             
                             # 只保留置信度高于阈值的检测结果
                             if conf >= confidence_threshold:
@@ -105,14 +119,22 @@ class AutoAnnotator:
                                 label_with_conf = f"{label} ({conf:.2f})"
                                 
                                 boxes.append((float(x1), float(y1), float(x2), float(y2), label_with_conf))
+                                print(f"  -> 添加检测框: {label_with_conf}")
+                            else:
+                                print(f"  -> 置信度不足，跳过")
                         except Exception as box_error:
                             print(f"处理检测框时出错: {box_error}")
                             continue
+                else:
+                    print(f"  结果 {idx} 没有检测框")
             
+            print(f"最终检测结果: {len(boxes)} 个目标")
             return boxes
             
         except Exception as e:
             print(f"错误: YOLO预测失败: {e}")
+            import traceback
+            traceback.print_exc()
             return []
     
     def is_available(self) -> bool:

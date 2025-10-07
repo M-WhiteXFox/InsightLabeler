@@ -99,16 +99,25 @@ def get_button_style(size: str = "medium", color: str = COLORS["primary"]) -> st
         font_size = "20px"
         min_width = "80px"
         min_height = "35px"
+        max_width = "400px"
     elif size == "large":
         padding = "12px 20px"
         font_size = "20px"
         min_width = "40px"
         min_height = "45px"
+        max_width = "400px"
+    elif size == "top":
+        padding = "12px 20px"
+        font_size = "20px"
+        min_width = "40px"
+        min_height = "45px"
+        max_width = "40px"
     else:  # medium
         padding = "10px 18px"
         font_size = "16px"
         min_width = "120px"
         min_height = "40px"
+        max_width = "400px"
     
     return f"""
         QPushButton {{
@@ -125,6 +134,7 @@ def get_button_style(size: str = "medium", color: str = COLORS["primary"]) -> st
             border-radius: 8px;
             min-width: {min_width};
             min-height: {min_height};
+            max-width: {max_width};
         }}
         QPushButton:hover {{
             background-color: {COLORS["hover"]};
@@ -146,11 +156,12 @@ def get_top_button_style(selected: bool = False) -> str:
                 padding: 14px 28px;
                 text-align: center;
                 text-decoration: none;
-                font-size: 16px;
+                font-size: 25px;
                 font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
                 font-weight: normal;
                 margin: 4px 2px;
                 border-radius: 8px;
+                max-width: 200px;
                 min-width: 140px;
             }}
             QPushButton:hover {{
@@ -169,11 +180,12 @@ def get_top_button_style(selected: bool = False) -> str:
                 padding: 14px 28px;
                 text-align: center;
                 text-decoration: none;
-                font-size: 16px;
+                font-size: 25px;
                 font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
                 font-weight: normal;
                 margin: 4px 2px;
                 border-radius: 8px;
+                max-width: 200px;
                 min-width: 140px;
             }}
             QPushButton:hover {{

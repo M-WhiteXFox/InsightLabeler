@@ -26,6 +26,7 @@ class TrainingWorker(QThread):
     log_updated = pyqtSignal(str)
     progress_updated = pyqtSignal(int)
     training_finished = pyqtSignal(bool, str)
+    python_exe = "D:\Developer\Anaconda\envs\yolo\Scripts\yolo.exe"
     
     def __init__(self, training_data_path: str, base_model_path: str, epochs: int = 100):
         super().__init__()
@@ -79,19 +80,19 @@ class TrainingWorker(QThread):
         except Exception as e:
             self.training_finished.emit(False, f"训练过程中发生错误: {str(e)}")
     
-    def execute_yolo_training(self, dataset_yaml_path: str, session_dir: str):
+    def execute_yolo_training(self, dataset_yaml_path: str, session_dir: str, python_exe= python_exe):
         """执行YOLO训练 - 在新CMD窗口中运行"""
         try:
             # 创建训练参数配置文件
             args_yaml_path = self.training_config.create_training_args(
-                session_dir, dataset_yaml_path, self.base_model_path, self.epochs
+                session_dir=session_dir,
+                dataset_yaml_path=dataset_yaml_path,
+                base_model_path=self.base_model_path,
+                epochs=self.epochs
             )
-            
-            # 获取Python解释器路径
-            python_exe = sys.executable
-            
+
             # 构建YOLO训练命令
-            yolo_cmd = f'"{python_exe}" -m ultralytics yolo train args={args_yaml_path}'
+            yolo_cmd = f'"{python_exe}" train cfg={args_yaml_path}'
             
             self.log_updated.emit(f"训练命令: {yolo_cmd}")
             

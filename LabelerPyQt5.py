@@ -7,9 +7,10 @@ import sys
 import os
 from typing import Dict, Any
 from functools import partial
+import label2yolo
 
 from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QWidget, QVBoxLayout, QPushButton, QHBoxLayout, \
-    QSizePolicy, QFileDialog, QLineEdit, QSpinBox, QStackedWidget, QGroupBox, QMessageBox
+    QSizePolicy, QFileDialog, QLineEdit, QSpinBox, QDoubleSpinBox, QStackedWidget, QGroupBox, QMessageBox
 from PyQt5.QtGui import QPixmap, QImage
 from PyQt5.QtCore import Qt, QTimer
 
@@ -21,6 +22,7 @@ import cv2
 
 from annotate_canvas import AnnotateCanvas
 from auto_annotator import AutoAnnotator
+from label2yolo import Labelme2Yolo
 from training_panel import TrainingPanel
 
 
@@ -151,8 +153,12 @@ class MainWindow(QMainWindow):
         self.training_btn.clicked.connect(lambda: self.switch_function_panel(1))
         button_layout.addWidget(self.training_btn)
 
+        self.label2yolo = ui_components.create_top_button("格式转换")
+        self.label2yolo.clicked.connect(lambda: self.switch_function_panel(2))
+        button_layout.addWidget(self.label2yolo)
+
         self.settings_btn_top = ui_components.create_top_button("设置")
-        self.settings_btn_top.clicked.connect(lambda: self.switch_function_panel(2))
+        self.settings_btn_top.clicked.connect(lambda: self.switch_function_panel(3))
         button_layout.addWidget(self.settings_btn_top)
 
         button_layout.addStretch()
@@ -180,69 +186,376 @@ class MainWindow(QMainWindow):
     # 功能区：视频 / 标注 / 设置
     # =============================
     def create_function_panel_area(self, parent_layout: QHBoxLayout) -> None:
+        """创建功能面板区域"""
+        # 创建功能面板容器
         self.function_panel = ui_components.create_function_panel_area(parent_layout)
+        
+        # 创建各个功能面板
+        self._create_video_annotate_panel()
+        self._create_training_panel()
+        self._create_format_conversion_panel()
+        self._create_settings_panel()
+        
+        # 初始化面板状态
+        self._initialize_panel_states()
+        
+        # 将功能面板添加到父布局
+        parent_layout.addWidget(self.function_panel, stretch=1)
 
-        # 视频标注整合面板
+    def _create_video_annotate_panel(self) -> None:
+        """创建视频标注面板"""
+        # 创建视频标注整合面板
         video_annotate_panel_data = ui_components.create_video_annotate_panel(
             self.config,
             self.select_file,
             self.extract_frames_handler
         )
         self.video_annotate_panel = video_annotate_panel_data[0]
-        (self.file_line_edit, self.video_mode_btn, self.folder_mode_btn, self.interval_spinbox, self.max_frames_spinbox, self.max_frames_set_btn,
+        
+        # 解包控件引用
+        (self.file_line_edit, self.video_mode_btn, self.folder_mode_btn, 
+         self.interval_spinbox, self.max_frames_spinbox, self.max_frames_set_btn,
          self.extract_btn, self.prev_frame_btn, self.next_frame_btn,
          self.frame_spinbox, self.goto_btn, self.frame_info_label, 
-         self.save_prediction_btn, self.progress_slider, self.new_box_btn, self.refresh_btn,
-         self.model_path_line_edit, self.model_browse_btn, self.model_status_label,
-         self.prediction_switch, self.confidence_slider, self.confidence_value_label) = video_annotate_panel_data[1:]
+         self.save_prediction_btn, self.progress_slider, self.new_box_btn, 
+         self.refresh_btn, self.model_path_line_edit, self.model_browse_btn, 
+         self.model_status_label, self.prediction_switch, self.confidence_slider, 
+         self.confidence_value_label) = video_annotate_panel_data[1:]
 
-        # 连接视频处理相关信号
+        # 连接信号槽
+        self._connect_video_annotate_signals()
+        
+        # 初始化进度条相关状态
+        self._initialize_progress_controls()
+        
+        # 添加到功能面板
+        self.function_panel.addWidget(self.video_annotate_panel)
+
+    def _connect_video_annotate_signals(self) -> None:
+        """连接视频标注面板的信号槽"""
+        # 视频处理相关信号
         self.prev_frame_btn.clicked.connect(self.previous_frame)
         self.next_frame_btn.clicked.connect(self.next_frame)
         self.goto_btn.clicked.connect(self.goto_frame)
         self.max_frames_set_btn.clicked.connect(self.set_max_frames_limit)
         self.save_prediction_btn.clicked.connect(self.save_prediction_results)
+        
+        # 进度条信号
         self.progress_slider.sliderPressed.connect(self.on_progress_pressed)
         self.progress_slider.sliderReleased.connect(self.on_progress_released)
         self.progress_slider.valueChanged.connect(self.on_progress_changed)
         
-        # 连接标注相关信号
+        # 标注相关信号
         self.new_box_btn.toggled.connect(self.toggle_draw_mode)
         self.refresh_btn.clicked.connect(self.refresh_prediction)
         
-        # 连接模型设置相关信号
+        # 模型设置相关信号
         self.model_browse_btn.clicked.connect(self.select_model_file_annotate)
         self.prediction_switch.toggled.connect(self.toggle_prediction_switch)
         self.confidence_slider.valueChanged.connect(self.update_confidence_value)
         
-        # 连接模式切换信号
+        # 模式切换信号
         self.video_mode_btn.clicked.connect(self.on_mode_changed)
         self.folder_mode_btn.clicked.connect(self.on_mode_changed)
-        
+
+    def _initialize_progress_controls(self) -> None:
+        """初始化进度条相关控件"""
         # 添加拖动状态标志
         self.is_slider_dragging = False
+        
         # 添加防抖定时器
         self.progress_timer = QTimer()
         self.progress_timer.setSingleShot(True)
         self.progress_timer.timeout.connect(self._jump_to_progress_frame)
 
-        self.function_panel.addWidget(self.video_annotate_panel)
-
-        # 训练面板
+    def _create_training_panel(self) -> None:
+        """创建训练面板"""
         self.training_panel = TrainingPanel(self.config)
         self.function_panel.addWidget(self.training_panel)
 
-        # 设置面板
+    def _create_format_conversion_panel(self) -> None:
+        """创建格式转换面板"""
+        self.format_conversion_panel = QWidget()
+        layout = QVBoxLayout(self.format_conversion_panel)
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        # 标题
+        title_label = QLabel("Labelme转YOLO格式")
+        title_label.setStyleSheet("""
+            QLabel {
+                font-size: 20px;
+                font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+                font-weight: bold;
+                color: #2c3e50;
+                margin-bottom: 15px;
+            }
+        """)
+        layout.addWidget(title_label)
+        
+        # 输入数据集选择组
+        input_group = QGroupBox("输入数据集")
+        input_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                font-size: 16px;
+                font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+                color: #2c3e50;
+                padding-top: 15px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 5px 10px;
+            }
+        """)
+        input_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        
+        input_layout = QVBoxLayout(input_group)
+        input_layout.setSpacing(10)
+        
+        # 输入数据集路径
+        input_path_layout = QHBoxLayout()
+        input_path_layout.setSpacing(8)
+        input_path_label = QLabel("Labelme数据集路径:")
+        input_path_label.setStyleSheet("""
+            QLabel { 
+                font-weight: normal; 
+                font-size: 14px;
+                font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+            }
+        """)
+        self.labelme_dir_line_edit = QLineEdit()
+        self.labelme_dir_line_edit.setPlaceholderText("请选择Labelme数据集文件夹")
+        self.labelme_dir_line_edit.setStyleSheet("""
+            QLineEdit { 
+                font-size: 14px;
+                font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+                padding: 6px;
+            }
+        """)
+        self.labelme_browse_btn = ui_components.create_button("浏览", styles.COLORS["primary"], "small")
+        
+        input_path_layout.addWidget(input_path_label)
+        input_path_layout.addWidget(self.labelme_dir_line_edit)
+        input_path_layout.addWidget(self.labelme_browse_btn)
+        input_layout.addLayout(input_path_layout)
+        
+        layout.addWidget(input_group)
+        
+        # 输出数据集选择组
+        output_group = QGroupBox("输出数据集")
+        output_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                font-size: 16px;
+                font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+                color: #2c3e50;
+                padding-top: 15px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 5px 10px;
+            }
+        """)
+        output_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        
+        output_layout = QVBoxLayout(output_group)
+        output_layout.setSpacing(10)
+        
+        # 输出数据集路径
+        output_path_layout = QHBoxLayout()
+        output_path_layout.setSpacing(8)
+        output_path_label = QLabel("YOLO数据集输出路径:")
+        output_path_label.setStyleSheet("""
+            QLabel { 
+                font-weight: normal; 
+                font-size: 14px;
+                font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+            }
+        """)
+        self.yolo_dir_line_edit = QLineEdit()
+        self.yolo_dir_line_edit.setPlaceholderText("请选择YOLO数据集输出文件夹")
+        self.yolo_dir_line_edit.setStyleSheet("""
+            QLineEdit { 
+                font-size: 14px;
+                font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+                padding: 6px;
+            }
+        """)
+        self.yolo_browse_btn = ui_components.create_button("浏览", styles.COLORS["primary"], "small")
+        
+        output_path_layout.addWidget(output_path_label)
+        output_path_layout.addWidget(self.yolo_dir_line_edit)
+        output_path_layout.addWidget(self.yolo_browse_btn)
+        output_layout.addLayout(output_path_layout)
+        
+        layout.addWidget(output_group)
+        
+        # 参数设置组
+        params_group = QGroupBox("转换参数")
+        params_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                font-size: 16px;
+                font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+                color: #2c3e50;
+                padding-top: 15px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 5px 10px;
+            }
+        """)
+        params_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        
+        params_layout = QVBoxLayout(params_group)
+        params_layout.setSpacing(10)
+        
+        # 标签文件路径
+        label_path_layout = QHBoxLayout()
+        label_path_layout.setSpacing(8)
+        label_path_label = QLabel("标签文件路径:")
+        label_path_label.setStyleSheet("""
+            QLabel { 
+                font-weight: normal; 
+                font-size: 14px;
+                font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+            }
+        """)
+        self.label_path_line_edit = QLineEdit()
+        self.label_path_line_edit.setPlaceholderText("请选择标签文件")
+        self.label_path_line_edit.setStyleSheet("""
+            QLineEdit { 
+                font-size: 14px;
+                font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+                padding: 6px;
+            }
+        """)
+        self.label_path_browse_btn = ui_components.create_button("浏览", styles.COLORS["primary"], "small")
+        
+        label_path_layout.addWidget(label_path_label)
+        label_path_layout.addWidget(self.label_path_line_edit)
+        label_path_layout.addWidget(self.label_path_browse_btn)
+        params_layout.addLayout(label_path_layout)
+        
+        # 验证集比例和线程数
+        val_thread_layout = QHBoxLayout()
+        val_thread_layout.setSpacing(15)
+        
+        # 验证集比例
+        val_size_layout = QVBoxLayout()
+        val_size_label = QLabel("验证集比例 (0-1):")
+        val_size_label.setStyleSheet("""
+            QLabel { 
+                font-weight: normal; 
+                font-size: 14px;
+                font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+            }
+        """)
+        self.val_size_spinbox = QDoubleSpinBox()
+        self.val_size_spinbox.setMinimum(0.0)
+        self.val_size_spinbox.setMaximum(1.0)
+        self.val_size_spinbox.setSingleStep(0.1)
+        self.val_size_spinbox.setValue(0.2)
+        self.val_size_spinbox.setDecimals(2)
+        self.val_size_spinbox.setStyleSheet("""
+            QDoubleSpinBox { 
+                font-size: 14px;
+                font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+                padding: 6px;
+            }
+        """)
+        val_size_layout.addWidget(val_size_label)
+        val_size_layout.addWidget(self.val_size_spinbox)
+        
+        # 线程数
+        thread_layout = QVBoxLayout()
+        thread_label = QLabel("线程数:")
+        thread_label.setStyleSheet("""
+            QLabel { 
+                font-weight: normal; 
+                font-size: 14px;
+                font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+            }
+        """)
+        self.thread_num_spinbox = QSpinBox()
+        self.thread_num_spinbox.setMinimum(1)
+        self.thread_num_spinbox.setMaximum(32)
+        self.thread_num_spinbox.setValue(15)
+        self.thread_num_spinbox.setStyleSheet("""
+            QSpinBox { 
+                font-size: 14px;
+                font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+                padding: 6px;
+            }
+        """)
+        thread_layout.addWidget(thread_label)
+        thread_layout.addWidget(self.thread_num_spinbox)
+        
+        val_thread_layout.addLayout(val_size_layout)
+        val_thread_layout.addLayout(thread_layout)
+        params_layout.addLayout(val_thread_layout)
+        
+        layout.addWidget(params_group)
+        
+        # 转换按钮
+        self.convert_btn = ui_components.create_button("开始转换", styles.COLORS["primary"], "large")
+        self.convert_btn.setStyleSheet(styles.get_button_style("large", styles.COLORS["primary"]) + """
+            QPushButton {
+                font-size: 16px;
+                font-weight: bold;
+                min-height: 45px;
+            }
+        """)
+        self.convert_btn.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        layout.addWidget(self.convert_btn)
+        
+        # 进度显示
+        self.convert_progress_label = QLabel("准备就绪")
+        self.convert_progress_label.setStyleSheet("""
+            QLabel {
+                font-size: 14px;
+                font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+                color: #6c757d;
+                margin-top: 10px;
+            }
+        """)
+        layout.addWidget(self.convert_progress_label)
+        
+        # 占位空间
+        layout.addStretch()
+        
+        # 设置面板的尺寸策略
+        self.format_conversion_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        self.function_panel.addWidget(self.format_conversion_panel)
+        
+        # 连接信号槽
+        self._connect_format_conversion_signals()
+
+    def _create_settings_panel(self) -> None:
+        """创建设置面板"""
         settings_panel_data = ui_components.create_settings_panel(self.config)
         self.settings_panel = settings_panel_data[0]
+        
+        # 解包控件引用
         (self.output_dir_line_edit, self.settings_btn,
          self.output_browse_btn, self.model_path_line_edit, 
          self.model_browse_btn, self.model_status_label,
          self.current_video_path_label) = settings_panel_data[1:]
+        
+        # 连接信号槽
         self.output_browse_btn.clicked.connect(self.select_output_dir)
         self.model_browse_btn.clicked.connect(self.select_model_file)
         self.settings_btn.clicked.connect(self.save_settings)
         
+        # 添加到功能面板
+        self.function_panel.addWidget(self.settings_panel)
+
+    def _initialize_panel_states(self) -> None:
+        """初始化面板状态"""
         # 初始化模型状态显示
         self.update_model_status()
         
@@ -261,8 +574,97 @@ class MainWindow(QMainWindow):
         # 初始化模式状态
         self.on_mode_changed()
 
-        self.function_panel.addWidget(self.settings_panel)
-        parent_layout.addWidget(self.function_panel, stretch=1)
+    def _connect_format_conversion_signals(self) -> None:
+        """连接格式转换面板的信号槽"""
+        self.labelme_browse_btn.clicked.connect(self.select_labelme_dir)
+        self.yolo_browse_btn.clicked.connect(self.select_yolo_dir)
+        self.label_path_browse_btn.clicked.connect(self.select_label_path)
+        self.convert_btn.clicked.connect(self.start_labelme_to_yolo_conversion)
+
+    # =============================
+    # 格式转换功能
+    # =============================
+    def select_labelme_dir(self) -> None:
+        """选择Labelme数据集目录"""
+        directory = QFileDialog.getExistingDirectory(self, "选择Labelme数据集文件夹", "./")
+        if directory:
+            normalized_path = self.normalize_path(directory)
+            self.labelme_dir_line_edit.setText(normalized_path)
+    
+    def select_yolo_dir(self) -> None:
+        """选择YOLO数据集输出目录"""
+        directory = QFileDialog.getExistingDirectory(self, "选择YOLO数据集输出文件夹", "./")
+        if directory:
+            normalized_path = self.normalize_path(directory)
+            self.yolo_dir_line_edit.setText(normalized_path)
+    
+    def select_label_path(self) -> None:
+        """选择标签文件"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "选择标签文件", "./", 
+            "文本文件 (*.txt);;所有文件 (*)"
+        )
+        if file_path:
+            normalized_path = self.normalize_path(file_path)
+            self.label_path_line_edit.setText(normalized_path)
+    
+    def start_labelme_to_yolo_conversion(self) -> None:
+        """开始Labelme到YOLO格式转换"""
+        try:
+            # 获取参数
+            labelme_dir = self.labelme_dir_line_edit.text().strip()
+            save_dir = self.yolo_dir_line_edit.text().strip()
+            label_path = self.label_path_line_edit.text().strip()
+            val_size = self.val_size_spinbox.value()
+            thread_num = self.thread_num_spinbox.value()
+            
+            # 验证参数
+            if not labelme_dir or not save_dir or not label_path:
+                QMessageBox.warning(self, "错误", "请填写所有必需的路径")
+                return
+            
+            if not os.path.exists(labelme_dir):
+                QMessageBox.warning(self, "错误", "Labelme数据集路径不存在")
+                return
+            
+            if not os.path.exists(label_path):
+                QMessageBox.warning(self, "错误", "标签文件路径不存在")
+                return
+            
+            # 创建输出目录
+            os.makedirs(save_dir, exist_ok=True)
+            
+            # 更新UI状态
+            self.convert_progress_label.setText("正在转换...")
+            self.convert_btn.setEnabled(False)
+            self.convert_btn.setText("转换中...")
+            
+            # 执行转换
+            success = label2yolo.convert_labelme_to_yolo(
+                labelme_dir=labelme_dir,
+                save_dir=save_dir,
+                label_path=label_path,
+                val_size=val_size,
+                thread_num=thread_num
+            )
+            
+            if success:
+                self.convert_progress_label.setText("转换完成！")
+                QMessageBox.information(self, "成功", f"Labelme到YOLO格式转换完成！\n输出目录: {save_dir}")
+            else:
+                self.convert_progress_label.setText("转换失败")
+                QMessageBox.warning(self, "错误", "格式转换失败，请检查输入数据")
+            
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"转换过程中出错: {str(e)}")
+            self.convert_progress_label.setText("转换出错")
+        finally:
+            self.convert_btn.setEnabled(True)
+            self.convert_btn.setText("开始转换")
+
+    # =============================
+    # 辅助方法
+    # =============================
 
     # =============================
     # 文件选择与事件响应
@@ -339,7 +741,6 @@ class MainWindow(QMainWindow):
                 if (hasattr(self.frame_controller, 'current_frame_index') and 
                     hasattr(self.frame_controller, 'image_files') and 
                     self.frame_controller.current_frame_index < len(self.frame_controller.image_files)):
-                    import cv2
                     current_image_path = self.frame_controller.image_files[self.frame_controller.current_frame_index]
                     current_frame_mat = cv2.imread(current_image_path)
             # 视频模式：使用缓存的帧数据
@@ -381,29 +782,26 @@ class MainWindow(QMainWindow):
             # 创建基于输入名称的文件夹结构
             base_output_dir = self.config.get("output_dir", "./output")
             output_dir = os.path.join(base_output_dir, output_name)
-            txt_save_dir = os.path.join(output_dir, "labels")
-            image_save_dir = os.path.join(output_dir, "images")
             
             # 确保目录存在
-            os.makedirs(txt_save_dir, exist_ok=True)
-            os.makedirs(image_save_dir, exist_ok=True)
+            os.makedirs(output_dir, exist_ok=True)
+            os.makedirs(output_dir, exist_ok=True)
             
             # 获取当前帧索引
             current_frame_index = getattr(self.frame_controller, 'current_frame_index', 0)
             
             # 保存YOLO格式的txt文件
             txt_filename = f"frame_{current_frame_index:06d}.txt"
-            txt_path = os.path.join(txt_save_dir, txt_filename)
+            txt_path = os.path.join(output_dir, txt_filename)
             
             # 保存图片文件
             image_filename = f"frame_{current_frame_index:06d}.jpg"
-            image_path = os.path.join(image_save_dir, image_filename)
+            image_path = os.path.join(output_dir, image_filename)
             
             # 获取图像尺寸
             h, w = current_frame_mat.shape[:2]
             
             # 保存图片
-            import cv2
             cv2.imwrite(image_path, current_frame_mat)
             
             # 写入YOLO格式数据
@@ -473,10 +871,26 @@ class MainWindow(QMainWindow):
             Utils.save_config(self.config)
             
             # 重新初始化自动标注器
+            print(f"正在加载新模型: {normalized_path}")
             self.auto_annotator = AutoAnnotator(normalized_path)
+            
+            # 检查模型是否成功加载
+            if self.auto_annotator.is_available():
+                print(f"模型加载成功，类别数量: {len(self.auto_annotator.class_names)}")
+                print(f"类别名称: {self.auto_annotator.class_names}")
+            else:
+                print("模型加载失败")
             
             # 更新模型状态显示
             self.update_model_status_annotate()
+            
+            # 如果当前在视频标注面板且有帧数据，立即刷新预测
+            if (self.function_panel.currentIndex() == 0 and 
+                hasattr(self, 'current_frame_mat') and 
+                self.current_frame_mat is not None and 
+                self.prediction_switch.isChecked()):
+                print("模型更新后立即刷新预测...")
+                self.refresh_prediction()
     
     def toggle_prediction_switch(self, checked: bool) -> None:
         """切换预测开关"""
@@ -653,7 +1067,6 @@ class MainWindow(QMainWindow):
         
         try:
             # 获取视频的总帧数
-            import cv2
             cap = cv2.VideoCapture(video_path)
             if not cap.isOpened():
                 QMessageBox.warning(self, "错误", "无法打开视频文件")
@@ -698,7 +1111,6 @@ class MainWindow(QMainWindow):
                 return
             
             # 视频模式
-            import cv2
             video_path = self.config.get("video_path", "")
             if not video_path:
                 return
@@ -723,25 +1135,43 @@ class MainWindow(QMainWindow):
     
     def refresh_prediction(self) -> None:
         """刷新预测结果"""
+        print("=== 刷新预测开始 ===")
+        print(f"当前面板索引: {self.function_panel.currentIndex()}")
+        print(f"当前帧数据: {self.current_frame_mat is not None}")
+        print(f"预测开关状态: {self.prediction_switch.isChecked()}")
+        print(f"模型可用性: {self.auto_annotator.is_available()}")
+        
         # 检查是否在视频标注面板且当前帧不为空
         if (self.function_panel.currentIndex() == 0 and self.current_frame_mat is not None):
             # 清空当前标注框
             if hasattr(self.image_label, 'clear_boxes'):
                 self.image_label.clear_boxes()
+                print("已清空当前标注框")
             
             # 如果预测开关开启，重新进行预测
             if self.prediction_switch.isChecked():
                 confidence_threshold = self.config.get("confidence_threshold", 0.5)
+                print(f"使用置信度阈值: {confidence_threshold}")
+                print(f"当前帧形状: {self.current_frame_mat.shape}")
+                
                 boxes = self.auto_annotator.predict(self.current_frame_mat, confidence_threshold)
+                print(f"预测结果: {len(boxes)} 个检测框")
+                
                 if boxes:
                     self.image_label.load_boxes(boxes)
                     print(f"刷新预测完成，检测到 {len(boxes)} 个目标")
+                    for i, box in enumerate(boxes):
+                        print(f"  目标 {i+1}: {box}")
                 else:
                     print("刷新预测完成，未检测到目标")
             else:
                 print("预测开关已关闭，跳过预测")
         else:
-            print("当前不在视频标注面板或无可用帧")
+            if self.function_panel.currentIndex() != 0:
+                print("当前不在视频标注面板")
+            if self.current_frame_mat is None:
+                print("当前帧数据为空")
+        print("=== 刷新预测结束 ===")
     
     def save_settings(self) -> None:
         """保存设置"""
@@ -841,7 +1271,7 @@ class MainWindow(QMainWindow):
     # =============================
     def switch_function_panel(self, index: int) -> None:
         self.function_panel.setCurrentIndex(index)
-        buttons = [self.video_annotate_btn, self.training_btn, self.settings_btn_top]
+        buttons = [self.video_annotate_btn, self.training_btn, self.label2yolo, self.settings_btn_top]
         for i, btn in enumerate(buttons):
             btn.setStyleSheet(styles.get_top_button_style(selected=(i == index)))
         
@@ -918,9 +1348,22 @@ class MainWindow(QMainWindow):
         import numpy as np
         pixmap = None
 
-        # 如果是字符串路径（文件模式）
+        # 如果是字符串路径（文件模式或照片文件夹模式）
         if isinstance(frame_data, str):
             pixmap = QPixmap(frame_data)
+            # 为了支持预测功能，需要将图片文件加载为numpy数组
+            try:
+                # 使用OpenCV读取图片文件为numpy数组
+                frame_mat = cv2.imread(frame_data)
+                if frame_mat is not None:
+                    self.current_frame_mat = frame_mat.copy()
+                    print(f"照片文件夹模式：成功加载图片为numpy数组，形状: {frame_mat.shape}")
+                else:
+                    print(f"照片文件夹模式：无法读取图片文件: {frame_data}")
+                    self.current_frame_mat = None
+            except Exception as e:
+                print(f"照片文件夹模式：读取图片文件时出错: {e}")
+                self.current_frame_mat = None
 
         # 如果是 numpy.ndarray（视频预览模式）
         elif isinstance(frame_data, np.ndarray):
@@ -1073,9 +1516,3 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'image_label') and isinstance(self.image_label, AnnotateCanvas):
             self.image_label.keyPressEvent(event)
         super().keyPressEvent(event)
-
-if __name__ == '__main__':
-    app = QApplication(sys.argv)
-    window = MainWindow()
-    window.show()
-    sys.exit(app.exec_())

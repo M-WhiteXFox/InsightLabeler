@@ -315,10 +315,9 @@ class TrainingConfig:
             config['model'] = base_model_path
             config['data'] = dataset_yaml_path
             config['epochs'] = epochs
-            config['project'] = os.path.dirname(os.path.abspath(session_dir))
-            config['name'] = os.path.basename(session_dir)
-            config['save_dir'] = os.path.abspath(session_dir)
-            
+            config['project'] = os.path.dirname(os.path.abspath(session_dir))  # 输出主目录
+            config['name'] = os.path.basename(session_dir)  # 训练子目录名
+
             # 保存配置文件
             args_yaml_path = os.path.join(session_dir, 'args.yaml')
             with open(args_yaml_path, 'w', encoding='utf-8') as f:

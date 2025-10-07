@@ -59,7 +59,11 @@ def create_button(text: str, color: str = styles.COLORS["primary"], size: str = 
     button.setCheckable(checkable)
     
     # 设置按钮样式
-    button.setStyleSheet(styles.get_button_style(size, color))
+    if size == "top":
+        button.setStyleSheet(styles.get_top_button_style())
+    else:
+        button.setStyleSheet(styles.get_button_style(size, color))
+
     
     # 设置按钮的尺寸策略，使其可以缩放
     button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -69,7 +73,7 @@ def create_button(text: str, color: str = styles.COLORS["primary"], size: str = 
 def create_top_button(text: str, color: str = styles.COLORS["primary"], 
                       parent: Any = None, checkable: bool = False) -> QPushButton:
     """创建顶部按钮"""
-    return create_button(text, color, "large", parent, checkable)
+    return create_button(text, color, "top", parent, checkable)
 
 
 def create_image_display_area(parent_layout: QHBoxLayout, image_label: QLabel) -> None:
